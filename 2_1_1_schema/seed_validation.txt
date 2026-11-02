@@ -1,0 +1,120 @@
+======================================================================
+seed_validation.txt — Banking Complaint Resolution Database
+======================================================================
+Run date      : 2026-11-02 15:15 EST
+Database      : PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) (clean database, created fresh for this run)
+Load order    : 1) database_schema.sql  2) seeddatacrs.sql  3) seed_validation_queries.sql
+Load result   : schema created with 0 errors; seed loaded with 0 errors
+Reproduce     : run the three files above, in order, in the Supabase SQL Editor
+                (or: psql -v ON_ERROR_STOP=1 -f <file>)
+
+SUMMARY
+  PASS  79 checks
+  WARN  4 checks
+  FAIL rows = integrity problems (none). WARN rows = issues in the supplied seed
+  data that the schema accepts; listed under Known limitations below.
+  Negative tests run in a rolled-back sub-transaction: row counts after
+  validation were unchanged (complaint=30, recommendation=10, fee=10).
+
+DETAILED RESULTS
+            section            | check_no |                               check_name                               | expected |  actual  | result |                                                                                                                                                                  detail                                                                                                                                                                  
+-------------------------------+----------+------------------------------------------------------------------------+----------+----------+--------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1. Row counts                 |     1.01 | Rows in employee                                                       | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.02 | Rows in customer                                                       | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.03 | Rows in account                                                        | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.04 | Rows in transactions                                                   | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.05 | Rows in fee                                                            | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.06 | Rows in service_request                                                | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.07 | Rows in complaint                                                      | 30       | 30       | PASS   | 
+ 1. Row counts                 |     1.08 | Rows in complaint_status_history                                       | 30       | 30       | PASS   | 
+ 1. Row counts                 |     1.09 | Rows in investigation                                                  | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.10 | Rows in recommendation                                                 | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.11 | Rows in review_request                                                 | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.12 | Rows in review_decision                                                | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.13 | Rows in customer_response                                              | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.14 | Rows in policy_document                                                | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.15 | Rows in policy_section                                                 | 10       | 10       | PASS   | 
+ 1. Row counts                 |     1.16 | Rows in audit_log                                                      | 10       | 10       | PASS   | 
+ 2. Orphan checks              |     2.01 | account -> customer                                                    | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.02 | complaint -> customer                                                  | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.03 | complaint -> account (when account given)                              | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.04 | complaint -> assigned employee                                         | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.05 | complaint_status_history -> complaint                                  | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.06 | complaint_status_history -> changed_by employee                        | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.07 | transactions -> account                                                | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.08 | fee -> account                                                         | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.09 | fee -> transaction (when transaction given)                            | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.10 | service_request -> customer                                            | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.11 | service_request -> account (when account given)                        | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.12 | investigation -> complaint                                             | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.13 | investigation -> analyst employee                                      | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.14 | recommendation -> investigation                                        | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.15 | review_request -> complaint / recommendation / reviewer                | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.16 | review_decision -> review_request                                      | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.17 | customer_response -> complaint / sent_by                               | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.18 | policy_section -> policy_document                                      | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.19 | audit_log -> performed_by employee                                     | 0        | 0        | PASS   | 
+ 2. Orphan checks              |     2.20 | audit_log entity_id resolves to a real row (polymorphic)               | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.01 | complaint.status outside lifecycle list                                | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.02 | complaint.priority outside Low/Medium/High/Critical                    | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.03 | complaint.channel outside Phone/Email/Branch/Web                       | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.04 | complaint_status_history old/new status invalid                        | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.05 | account.status invalid                                                 | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.06 | service_request.status invalid                                         | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.07 | review_request.status invalid                                          | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.08 | review_decision.decision invalid                                       | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.09 | transactions.transaction_type not DEBIT/CREDIT                         | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.10 | policy_document.status invalid                                         | 0        | 0        | PASS   | 
+ 3. Invalid status checks      |     3.11 | recommendation.confidence_score outside 0-100                          | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.01 | complaint account belongs to the complaining customer                  | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.02 | service_request account belongs to the requesting customer             | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.03 | fee transaction is on the same account as the fee                      | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.04 | transaction balance_after = balance_before -/+ amount                  | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.05 | account.balance = balance_after of its latest transaction              | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.06 | complaint.status = new_status of its latest history row                | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.07 | every complaint has at least one status history row                    | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.08 | review_request complaint = complaint behind its recommendation         | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.09 | CLOSED service requests have closed_date; open ones do not             | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.10 | investigation end_date not before start_date                           | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.11 | investigation starts on/after complaint was raised                     | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.12 | customer response sent on/after complaint was raised                   | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.13 | review_request reviewer has role Reviewer                              | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.14 | investigation analyst has role Analyst                                 | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.15 | complaint assigned to an Analyst                                       | 0        | 0        | PASS   | 
+ 4. Consistency checks         |     4.16 | complaints stored with NULL account (unmatched, spec AT-02)            | 3        | 3        | PASS   | CMP023, CMP029, CMP030
+ 5. Seed data-quality findings |     5.01 | review_request.status disagrees with its review_decision               | 0        | 7        | WARN   | RR001 (PENDING vs APPROVED), RR003 (PENDING vs REQUEST_CHANGES), RR004 (PENDING vs APPROVED), RR006 (PENDING vs REQUEST_CHANGES), RR007 (PENDING vs APPROVED), RR009 (UNDER_REVIEW vs ESCALATED), RR010 (PENDING vs APPROVED)
+ 5. Seed data-quality findings |     5.02 | first history row has non-NULL old_status (earlier transition missing) | 0        | 11       | WARN   | CMP002 (OPEN->IN_PROGRESS), CMP003 (OPEN->UNDER_REVIEW), CMP005 (IN_PROGRESS->CLOSED), CMP007 (OPEN->IN_PROGRESS), CMP009 (IN_PROGRESS->UNDER_REVIEW), CMP012 (OPEN->UNDER_REVIEW), CMP015 (OPEN->IN_PROGRESS), CMP016 (OPEN->UNDER_REVIEW), CMP021 (OPEN->IN_PROGRESS), CMP024 (OPEN->UNDER_REVIEW), CMP028 (IN_PROGRESS->UNDER_REVIEW)
+ 5. Seed data-quality findings |     5.03 | customer told a fee was reversed but fee.reversed is still FALSE       | 0        | 1        | WARN   | RES001/FEE001
+ 5. Seed data-quality findings |     5.04 | status history timestamps are load time, not real event time           | 0        | 30       | WARN   | changed_at defaulted at load; seed supplies no event times
+ 6. Negative / boundary tests  |     6.01 | complaint for another customer's account                               | REJECTED | REJECTED | PASS   | REJECTED: insert or update on table "complaint" violates foreign key constraint "fk_complaint_account_owner"
+ 6. Negative / boundary tests  |     6.02 | complaint for unknown customer                                         | REJECTED | REJECTED | PASS   | REJECTED: insert or update on table "complaint" violates foreign key constraint "complaint_customer_id_fkey"
+ 6. Negative / boundary tests  |     6.03 | complaint with invalid status DONE                                     | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "complaint" violates check constraint "complaint_status_check"
+ 6. Negative / boundary tests  |     6.04 | complaint with invalid priority Urgent                                 | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "complaint" violates check constraint "complaint_priority_check"
+ 6. Negative / boundary tests  |     6.05 | complaint with missing narrative                                       | REJECTED | REJECTED | PASS   | REJECTED: null value in column "customer_narrative" of relation "complaint" violates not-null constraint
+ 6. Negative / boundary tests  |     6.06 | duplicate complaint_id CMP001                                          | REJECTED | REJECTED | PASS   | REJECTED: duplicate key value violates unique constraint "complaint_pkey"
+ 6. Negative / boundary tests  |     6.07 | transaction whose balances do not add up                               | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "transactions" violates check constraint "chk_txn_balance"
+ 6. Negative / boundary tests  |     6.08 | fee linked to another account's transaction                            | REJECTED | REJECTED | PASS   | REJECTED: insert or update on table "fee" violates foreign key constraint "fk_fee_txn_same_account"
+ 6. Negative / boundary tests  |     6.09 | CLOSED service request without closed_date                             | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "service_request" violates check constraint "chk_sr_closed"
+ 6. Negative / boundary tests  |     6.10 | investigation ending before it starts                                  | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "investigation" violates check constraint "chk_inv_dates"
+ 6. Negative / boundary tests  |     6.11 | recommendation confidence 150                                          | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "recommendation" violates check constraint "recommendation_confidence_score_check"
+ 6. Negative / boundary tests  |     6.12 | review decision without a reason (spec AT-09)                          | REJECTED | REJECTED | PASS   | REJECTED: null value in column "decision_reason" of relation "review_decision" violates not-null constraint
+ 6. Negative / boundary tests  |     6.13 | status history with invalid new_status                                 | REJECTED | REJECTED | PASS   | REJECTED: new row for relation "complaint_status_history" violates check constraint "chk_status_values"
+ 6. Negative / boundary tests  |     6.14 | BOUNDARY: complaint with NULL account is accepted                      | ACCEPTED | ACCEPTED | PASS   | ACCEPTED
+ 6. Negative / boundary tests  |     6.15 | BOUNDARY: confidence exactly 100 is accepted                           | ACCEPTED | ACCEPTED | PASS   | ACCEPTED
+ 6. Negative / boundary tests  |     6.16 | BOUNDARY: fee with no transaction is accepted                          | ACCEPTED | ACCEPTED | PASS   | ACCEPTED
+(83 rows)
+
+
+KNOWN LIMITATIONS (from the WARN rows)
+  5.01 Seven review_request.status values (PENDING/UNDER_REVIEW) disagree with
+       their review_decision. Seed data issue; the app should update
+       review_request.status whenever a decision is recorded.
+  5.02 Eleven complaints have only one history row whose old_status is not NULL,
+       so their creation (NULL->OPEN) event is missing from the history.
+  5.03 RES001 tells the customer the overdraft fee was reversed, but FEE001 has
+       reversed = FALSE.
+  5.04 The seed gives no event times for status history, review decisions or
+       audit rows, so changed_at / decided_at / performed_at hold the load time.
+  Other: the exercise asks for CSV loading; the supplied seed was a SQL file,
+       so it was loaded with SQL. Category values are not restricted by a
+       CHECK because the spec says the taxonomy is still pending approval.
