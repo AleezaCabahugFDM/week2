@@ -167,7 +167,7 @@ invalid_status AS (
            ids AS detail
     FROM (
         SELECT 3.01 n, 'complaint.status outside lifecycle list' name, count(*) cnt, string_agg(complaint_id, ', ') ids
-          FROM complaint WHERE status NOT IN ('OPEN','IN_PROGRESS','UNDER_REVIEW','ESCALATED','RESOLVED','CLOSED')
+          FROM complaint WHERE status NOT IN ('OPEN','IN_PROGRESS','UNDER_REVIEW','PENDING_APPROVAL','CHANGES_REQUESTED','ESCALATED','RESOLVED','CLOSED')
         UNION ALL
         SELECT 3.02, 'complaint.priority outside Low/Medium/High/Critical', count(*), string_agg(complaint_id, ', ')
           FROM complaint WHERE priority NOT IN ('Low','Medium','High','Critical')
@@ -177,17 +177,17 @@ invalid_status AS (
         UNION ALL
         SELECT 3.04, 'complaint_status_history old/new status invalid', count(*), string_agg(complaint_id, ', ')
           FROM complaint_status_history
-          WHERE new_status NOT IN ('OPEN','IN_PROGRESS','UNDER_REVIEW','ESCALATED','RESOLVED','CLOSED')
-             OR (old_status IS NOT NULL AND old_status NOT IN ('OPEN','IN_PROGRESS','UNDER_REVIEW','ESCALATED','RESOLVED','CLOSED'))
+          WHERE new_status NOT IN ('OPEN','IN_PROGRESS','UNDER_REVIEW','PENDING_APPROVAL','CHANGES_REQUESTED','ESCALATED','RESOLVED','CLOSED')
+             OR (old_status IS NOT NULL AND old_status NOT IN ('OPEN','IN_PROGRESS','UNDER_REVIEW','PENDING_APPROVAL','CHANGES_REQUESTED','ESCALATED','RESOLVED','CLOSED'))
         UNION ALL
         SELECT 3.05, 'account.status invalid', count(*), string_agg(account_id, ', ')
-          FROM account WHERE status NOT IN ('ACTIVE','DORMANT','FROZEN','CLOSED')
+          FROM account WHERE status NOT IN ('ACTIVE','INACTIVE','CLOSED','RESTRICTED')
         UNION ALL
         SELECT 3.06, 'service_request.status invalid', count(*), string_agg(request_id, ', ')
-          FROM service_request WHERE status NOT IN ('OPEN','IN_PROGRESS','CLOSED','CANCELLED')
+          FROM service_request WHERE status NOT IN ('OPEN','IN_PROGRESS','CLOSED')
         UNION ALL
         SELECT 3.07, 'review_request.status invalid', count(*), string_agg(review_request_id, ', ')
-          FROM review_request WHERE status NOT IN ('PENDING','UNDER_REVIEW','APPROVED','REJECTED','ESCALATED')
+          FROM review_request WHERE status NOT IN ('PENDING','UNDER_REVIEW','APPROVED','REJECTED','CHANGES_REQUESTED','ESCALATED')
         UNION ALL
         SELECT 3.08, 'review_decision.decision invalid', count(*), string_agg(decision_id, ', ')
           FROM review_decision WHERE decision NOT IN ('APPROVED','REJECTED','REQUEST_CHANGES','ESCALATED')
@@ -196,7 +196,7 @@ invalid_status AS (
           FROM transactions WHERE transaction_type NOT IN ('DEBIT','CREDIT')
         UNION ALL
         SELECT 3.10, 'policy_document.status invalid', count(*), string_agg(policy_id, ', ')
-          FROM policy_document WHERE status NOT IN ('DRAFT','ACTIVE','RETIRED')
+          FROM policy_document WHERE status NOT IN ('ACTIVE','SUPERSEDED','RETIRED','DRAFT')
         UNION ALL
         SELECT 3.11, 'recommendation.confidence_score outside 0-100', count(*), string_agg(recommendation_id, ', ')
           FROM recommendation WHERE confidence_score < 0 OR confidence_score > 100
@@ -246,7 +246,7 @@ consistency AS (
           FROM complaint x
           JOIN LATERAL (SELECT new_status FROM complaint_status_history h
                         WHERE h.complaint_id = x.complaint_id
-                        ORDER BY changed_at DESC, status_history_id DESC LIMIT 1) lh ON TRUE
+                        ORDER BY status_timestamp DESC, status_history_id DESC LIMIT 1) lh ON TRUE
           WHERE lh.new_status <> x.status
         UNION ALL
         SELECT 4.07, 'every complaint has at least one status history row', '0',
@@ -329,19 +329,32 @@ dq_findings AS (
                             WHERE p.complaint_id = h.complaint_id
                               AND p.status_history_id < h.status_history_id)
         UNION ALL
-        SELECT 5.03, 'customer told a fee was reversed but fee.reversed is still FALSE',
-               count(*), string_agg(DISTINCT cr.response_id || '/' || f.fee_id, ', ')
+        SELECT 5.03, 'customer told a fee was reversed/refunded but no fee on the account is reversed',
+               count(*), string_agg(cr.response_id || ' (' || x.complaint_id || ')', ', ' ORDER BY cr.response_id)
           FROM customer_response cr
           JOIN complaint x ON x.complaint_id = cr.complaint_id
-          JOIN fee f       ON f.account_id   = x.account_id
-          WHERE cr.response_text ILIKE '%fee has been reversed%'
-            AND f.fee_type = 'Overdraft' AND NOT f.reversed
+          WHERE (cr.response_text ILIKE '%reversed%' OR cr.response_text ILIKE '%refund%')
+            AND NOT EXISTS (SELECT 1 FROM fee f WHERE f.account_id = x.account_id AND f.reversed)
         UNION ALL
         SELECT 5.04, 'status history timestamps are load time, not real event time',
-               count(*), 'changed_at defaulted at load; seed supplies no event times'
+               count(*), 'status_timestamp defaulted at load; seed supplies no event times'
           FROM complaint_status_history
-          WHERE changed_at > (SELECT max(created_at) FROM complaint) + interval '1 year'
-        HAVING count(*) > 0
+          WHERE status_timestamp > (SELECT max(created_at) FROM complaint) + interval '1 year'
+        UNION ALL
+        SELECT 5.05, 'overdraft fee charged while the balance stayed positive',
+               count(*), string_agg(f.fee_id || ' (balance_after ' || t.balance_after || ')', ', ')
+          FROM fee f JOIN transactions t ON t.transaction_id = f.transaction_id
+          WHERE f.fee_type = 'Overdraft' AND t.balance_after >= 0
+        UNION ALL
+        SELECT 5.06, 'complaint still OPEN although its investigation has ended',
+               count(*), string_agg(x.complaint_id || ' (' || i.investigation_id || ' ended ' || i.end_date || ')', ', ')
+          FROM complaint x JOIN investigation i USING (complaint_id)
+          WHERE x.status = 'OPEN' AND i.end_date IS NOT NULL
+        UNION ALL
+        SELECT 5.07, 'complaints with no investigation (intake data only)',
+               count(*), min(x.complaint_id) || ' - ' || max(x.complaint_id)
+          FROM complaint x
+          WHERE NOT EXISTS (SELECT 1 FROM investigation i WHERE i.complaint_id = x.complaint_id)
     ) q
 ),
 
@@ -382,6 +395,14 @@ neg_tests AS (
              $q$INSERT INTO review_decision (decision_id,review_request_id,decision,decision_reason) VALUES ('TST12','RR001','APPROVED',NULL)$q$),
             (6.13, 'status history with invalid new_status', 'REJECTED',
              $q$INSERT INTO complaint_status_history (complaint_id,old_status,new_status,changed_by) VALUES ('CMP001','OPEN','FINISHED','EMP001')$q$),
+            (6.17, 'status history OPEN -> OPEN (no change)', 'REJECTED',
+             $q$INSERT INTO complaint_status_history (complaint_id,old_status,new_status,changed_by) VALUES ('CMP001','OPEN','OPEN','EMP001')$q$),
+            (6.18, 'service request for another customer''s account', 'REJECTED',
+             $q$INSERT INTO service_request VALUES ('TST18','CUS001','ACC003','Test','OPEN','2025-01-01',NULL)$q$),
+            (6.19, 'audit log with unknown action_type HACK', 'REJECTED',
+             $q$INSERT INTO audit_log (entity_name,entity_id,action_type,performed_by) VALUES ('COMPLAINT','CMP001','HACK','EMP001')$q$),
+            (6.20, 'delete a customer who still has accounts/complaints', 'REJECTED',
+             $q$DELETE FROM customer WHERE customer_id = 'CUS001'$q$),
             (6.14, 'BOUNDARY: complaint with NULL account is accepted', 'ACCEPTED',
              $q$INSERT INTO complaint VALUES ('TST14','CUS001',NULL,'Web','Service Delay','test','Low','OPEN',now(),'EMP001')$q$),
             (6.15, 'BOUNDARY: confidence exactly 100 is accepted', 'ACCEPTED',

@@ -66,7 +66,8 @@ CREATE TABLE account (
     open_date        DATE NOT NULL,
     CONSTRAINT fk_account_customer
         FOREIGN KEY (customer_id) REFERENCES customer(customer_id),
-    CONSTRAINT chk_account_status CHECK (status IN ('ACTIVE', 'INACTIVE', 'CLOSED', 'RESTRICTED'))
+    CONSTRAINT chk_account_status CHECK (status IN ('ACTIVE', 'INACTIVE', 'CLOSED', 'RESTRICTED')),
+    CONSTRAINT uq_account_customer UNIQUE (account_id, customer_id)
 );
 
 -- --------------------------------------------------------------------------
@@ -89,7 +90,7 @@ CREATE TABLE complaint (
     CONSTRAINT fk_complaint_customer
         FOREIGN KEY (customer_id) REFERENCES customer(customer_id),
     CONSTRAINT fk_complaint_account
-        FOREIGN KEY (account_id) REFERENCES account(account_id),
+        FOREIGN KEY (account_id, customer_id) REFERENCES account(account_id, customer_id),
     CONSTRAINT fk_complaint_assignee
         FOREIGN KEY (assigned_employee_id) REFERENCES employee(employee_id),
     CONSTRAINT chk_complaint_priority CHECK (priority IN ('Low', 'Medium', 'High', 'Critical')),
@@ -114,7 +115,16 @@ CREATE TABLE complaint_status_history (
     CONSTRAINT fk_status_history_complaint
         FOREIGN KEY (complaint_id) REFERENCES complaint(complaint_id),
     CONSTRAINT fk_status_history_employee
-        FOREIGN KEY (changed_by) REFERENCES employee(employee_id)
+        FOREIGN KEY (changed_by) REFERENCES employee(employee_id),
+    CONSTRAINT chk_status_history_new CHECK (
+        new_status IN ('OPEN', 'IN_PROGRESS', 'UNDER_REVIEW', 'PENDING_APPROVAL',
+                       'CHANGES_REQUESTED', 'ESCALATED', 'RESOLVED', 'CLOSED')
+    ),
+    CONSTRAINT chk_status_history_old CHECK (
+        old_status IS NULL OR old_status IN ('OPEN', 'IN_PROGRESS', 'UNDER_REVIEW', 'PENDING_APPROVAL',
+                                             'CHANGES_REQUESTED', 'ESCALATED', 'RESOLVED', 'CLOSED')
+    ),
+    CONSTRAINT chk_status_history_change CHECK (old_status IS DISTINCT FROM new_status)
 );
 
 -- --------------------------------------------------------------------------
@@ -132,7 +142,13 @@ CREATE TABLE transactions (
     CONSTRAINT fk_transaction_account
         FOREIGN KEY (account_id) REFERENCES account(account_id),
     CONSTRAINT chk_transaction_type CHECK (transaction_type IN ('DEBIT', 'CREDIT')),
-    CONSTRAINT chk_transaction_amount CHECK (amount >= 0)
+    CONSTRAINT chk_transaction_amount CHECK (amount >= 0),
+    CONSTRAINT chk_transaction_balance CHECK (
+        balance_before IS NULL OR balance_after IS NULL
+        OR (transaction_type = 'DEBIT'  AND balance_after = balance_before - amount)
+        OR (transaction_type = 'CREDIT' AND balance_after = balance_before + amount)
+    ),
+    CONSTRAINT uq_transaction_account UNIQUE (transaction_id, account_id)
 );
 
 -- --------------------------------------------------------------------------
@@ -150,7 +166,7 @@ CREATE TABLE fee (
     CONSTRAINT fk_fee_account
         FOREIGN KEY (account_id) REFERENCES account(account_id),
     CONSTRAINT fk_fee_transaction
-        FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id),
+        FOREIGN KEY (transaction_id, account_id) REFERENCES transactions(transaction_id, account_id),
     CONSTRAINT chk_fee_amount CHECK (amount >= 0)
 );
 
@@ -168,9 +184,10 @@ CREATE TABLE service_request (
     CONSTRAINT fk_service_request_customer
         FOREIGN KEY (customer_id) REFERENCES customer(customer_id),
     CONSTRAINT fk_service_request_account
-        FOREIGN KEY (account_id) REFERENCES account(account_id),
+        FOREIGN KEY (account_id, customer_id) REFERENCES account(account_id, customer_id),
     CONSTRAINT chk_service_request_status CHECK (status IN ('OPEN', 'IN_PROGRESS', 'CLOSED')),
-    CONSTRAINT chk_service_request_dates CHECK (closed_date IS NULL OR closed_date >= created_date)
+    CONSTRAINT chk_service_request_dates CHECK (closed_date IS NULL OR closed_date >= created_date),
+    CONSTRAINT chk_service_request_closed CHECK ((status = 'CLOSED') = (closed_date IS NOT NULL))
 );
 
 -- --------------------------------------------------------------------------
@@ -292,7 +309,10 @@ CREATE TABLE audit_log (
     details         TEXT,
     performed_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_audit_employee
-        FOREIGN KEY (performed_by) REFERENCES employee(employee_id)
+        FOREIGN KEY (performed_by) REFERENCES employee(employee_id),
+    CONSTRAINT chk_audit_action CHECK (
+        action_type IN ('CREATE', 'UPDATE', 'CLOSE', 'ESCALATE', 'SEND', 'DELETE', 'APPROVE', 'REJECT')
+    )
 );
 
 -- --------------------------------------------------------------------------
