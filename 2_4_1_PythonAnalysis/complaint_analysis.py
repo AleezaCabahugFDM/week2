@@ -1,31 +1,11 @@
-"""Complaint analysis - Week 2 | Exercise 2.4.1.
+"""Complaint analysis - Week 2, Exercise 2.4.1.
 
-Validates complaint data and produces evidence-based summaries.
-Standard library only (Python 3.9+), no pandas needed.
-
-    python3 complaint_analysis.py ~/Downloads/complaints.xlsx   # the shared file (.xlsx or .csv)
+Usage:
+    python3 complaint_analysis.py ~/Downloads/complaints.xlsx
     python3 complaint_analysis.py complaints.csv --out-dir results/
-    python3 complaint_analysis.py --self-test                   # missing-file / incomplete-row tests
+    python3 complaint_analysis.py --self-test
 
-Input may be .csv or .xlsx (first worksheet; Excel date serials become ISO dates).
-With no input argument the script looks for complaints.csv next to this file.
-
-Outputs (in --out-dir, default: this folder):
-    complaint_analysis_output.csv   calculated measures (one row per measure)
-    complaint_analysis_summary.md   management summary with definitions and load evidence
-
-Exit codes:
-    0  success (warnings about incomplete rows may still be printed)
-    2  input file missing or unreadable
-    3  file readable but unusable (missing required columns, no data rows,
-       or no valid rows after validation)
-
-Definitions follow Exercise 2.2.2 (complaint_metrics.sql):
-    open / backlog  = status is NOT Closed or Resolved
-    closed          = status is Closed or Resolved
-    resolution days = resolved_date - created_date, closed complaints ONLY
-    a category with no measurable closed case has resolution = blank (unknown), NOT 0
-    closed complaints with no usable resolved_date are counted separately, not dropped
+Exit codes: 0 = success, 2 = file missing or unreadable, 3 = file unusable.
 """
 
 import argparse
@@ -43,667 +23,481 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
-
-REQUIRED_COLUMNS = [
-    "complaint_id",
-    "customer_id",
-    "category",
-    "status",
-    "created_date",
-    "resolved_date",
-]
-
-# The shared file names the two date columns differently from the requirement.
-# The mapping is explicit and reported in the load evidence, never silent.
-COLUMN_ALIASES = {
-    "date_opened": "created_date",
-    "date_closed": "resolved_date",
-}
-
-# Columns that must have a value for a row to be analysed.
-# resolved_date may be blank: open complaints have not been resolved.
-REQUIRED_VALUES = ["complaint_id", "customer_id", "category", "status", "created_date"]
-
-CLOSED_STATUSES = {"closed", "resolved"}
-SMALL_SAMPLE = 5  # fewer measured closed cases than this -> flagged in the summary
-
 OUTPUT_CSV = "complaint_analysis_output.csv"
 OUTPUT_MD = "complaint_analysis_summary.md"
 
+REQUIRED_COLUMNS = ["complaint_id", "customer_id", "category", "status", "created_date", "resolved_date"]
+REQUIRED_VALUES = ["complaint_id", "customer_id", "category", "status", "created_date"]
+COLUMN_ALIASES = {"date_opened": "created_date", "date_closed": "resolved_date"}
+CLOSED_STATUSES = {"closed", "resolved"}
+SMALL_SAMPLE = 5
+
 
 class AnalysisError(Exception):
-    """A controlled failure: printed as a clear message, mapped to an exit code."""
-
     def __init__(self, message, exit_code):
         super().__init__(message)
         self.exit_code = exit_code
 
 
-# ---------------------------------------------------------------------------
-# Step 1 - load and validate
-# ---------------------------------------------------------------------------
+# ---------- Load and validate ----------
 
 def parse_date(text):
-    """ISO YYYY-MM-DD -> date, or None if blank/invalid."""
     try:
         return date.fromisoformat(text)
     except (TypeError, ValueError):
         return None
 
 
-XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-EXCEL_EPOCH = date(1899, 12, 30)  # Excel day 0 (allows for Excel's 1900 leap-year bug)
-DATE_COLUMNS = {"created_date", "resolved_date", "date_opened", "date_closed"}
-
-
-def read_xlsx_rows(path):
-    """First worksheet of an .xlsx as a list of string lists (header first).
-
-    Blank cells stay blank. Excel serial numbers in date columns become YYYY-MM-DD;
-    anything else is passed through unchanged so validation can reject it.
-    """
-    def col_index(ref):
-        n = 0
-        for ch in re.match(r"[A-Z]+", ref).group(0):
-            n = n * 26 + ord(ch) - 64
-        return n - 1
-
+def read_xlsx(path):
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     with zipfile.ZipFile(path) as zf:
         shared = []
         if "xl/sharedStrings.xml" in zf.namelist():
-            for si in ET.fromstring(zf.read("xl/sharedStrings.xml")).iter(f"{XLSX_NS}si"):
-                shared.append("".join(t.text or "" for t in si.iter(f"{XLSX_NS}t")))
+            for si in ET.fromstring(zf.read("xl/sharedStrings.xml")).iter(f"{ns}si"):
+                shared.append("".join(t.text or "" for t in si.iter(f"{ns}t")))
         sheet = ET.fromstring(zf.read("xl/worksheets/sheet1.xml"))
 
     rows = []
-    for row in sheet.iter(f"{XLSX_NS}row"):
+    for row in sheet.iter(f"{ns}row"):
         cells = {}
-        for c in row.iter(f"{XLSX_NS}c"):
-            v = c.find(f"{XLSX_NS}v")
-            if c.get("t") == "s" and v is not None:
-                text = shared[int(v.text)]
-            elif c.get("t") == "inlineStr":
-                text = "".join(t.text or "" for t in c.iter(f"{XLSX_NS}t"))
-            else:
-                text = v.text if v is not None and v.text is not None else ""
-            cells[col_index(c.get("r"))] = text
+        for c in row.iter(f"{ns}c"):
+            col = 0
+            for ch in re.match(r"[A-Z]+", c.get("r")).group(0):
+                col = col * 26 + ord(ch) - 64
+            v = c.find(f"{ns}v")
+            text = v.text if v is not None and v.text else ""
+            if c.get("t") == "s" and text:
+                text = shared[int(text)]
+            cells[col - 1] = text
         rows.append([cells.get(i, "") for i in range(max(cells) + 1)] if cells else [])
 
-    if rows:
-        date_idx = {i for i, h in enumerate(rows[0]) if h.strip().lower() in DATE_COLUMNS}
-        for r in rows[1:]:
-            for i in date_idx:
-                if i < len(r) and re.fullmatch(r"\d+(\.0+)?", r[i]):
-                    r[i] = (EXCEL_EPOCH + timedelta(days=int(float(r[i])))).isoformat()
+    # Excel stores dates as day numbers counted from 1899-12-30.
+    date_cols = [i for i, h in enumerate(rows[0]) if h.strip().lower() in {*COLUMN_ALIASES, *COLUMN_ALIASES.values()}]
+    for row in rows[1:]:
+        for i in date_cols:
+            if i < len(row) and row[i].isdigit():
+                row[i] = (date(1899, 12, 30) + timedelta(days=int(row[i]))).isoformat()
     return rows
 
 
-def load_complaints(path):
-    """Read and validate a complaint .csv or .xlsx. Returns (valid_rows, evidence).
-
-    Raises AnalysisError for a missing/unreadable file or unusable structure.
-    Incomplete rows are excluded with a recorded reason; they do not stop the run.
-    """
+def read_rows(path):
     path = Path(path)
     if not path.exists():
         raise AnalysisError(f"Input file not found: {path}", 2)
     if not path.is_file():
         raise AnalysisError(f"Input path is not a file: {path}", 2)
-
     try:
         if path.suffix.lower() == ".xlsx":
-            all_rows = read_xlsx_rows(path)
-        else:
-            with path.open(newline="", encoding="utf-8-sig") as fh:
-                all_rows = list(csv.reader(fh))
+            return read_xlsx(path)
+        with path.open(newline="", encoding="utf-8-sig") as fh:
+            return list(csv.reader(fh))
     except (OSError, UnicodeDecodeError, csv.Error, zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise AnalysisError(f"Could not read {path}: {exc}", 2) from exc
-    raw_header = all_rows[0] if all_rows else None
-    raw_rows = all_rows[1:]
 
-    if not raw_header:
+
+def load_complaints(path):
+    all_rows = read_rows(path)
+    if not all_rows:
         raise AnalysisError(f"{path} is empty (no header row).", 3)
 
-    header = [h.strip() for h in raw_header]
-    aliases_applied = {}
-    normalised = []
-    for name in header:
-        key = name.lower()
-        if key in COLUMN_ALIASES and COLUMN_ALIASES[key] not in [h.lower() for h in header]:
-            aliases_applied[name] = COLUMN_ALIASES[key]
-            normalised.append(COLUMN_ALIASES[key])
-        else:
-            normalised.append(key)
+    header = [h.strip() for h in all_rows[0]]
+    lower = [h.lower() for h in header]
+    columns, aliases = [], {}
+    for name, key in zip(header, lower):
+        if key in COLUMN_ALIASES and COLUMN_ALIASES[key] not in lower:
+            aliases[name] = COLUMN_ALIASES[key]
+            key = COLUMN_ALIASES[key]
+        columns.append(key)
 
-    missing_cols = [c for c in REQUIRED_COLUMNS if c not in normalised]
-    if missing_cols:
-        raise AnalysisError(
-            f"{path} is missing required column(s): {', '.join(missing_cols)}. "
-            f"Found: {', '.join(header)}",
-            3,
-        )
+    missing = [c for c in REQUIRED_COLUMNS if c not in columns]
+    if missing:
+        raise AnalysisError(f"{path} is missing required column(s): {', '.join(missing)}. "
+                            f"Found: {', '.join(header)}", 3)
 
-    # Blank lines in a CSV are ignored rather than counted as incomplete rows.
-    # Keep the real file line number (header = line 1) so warnings point to the right line.
-    raw_rows = [(i + 2, r) for i, r in enumerate(raw_rows) if any(cell.strip() for cell in r)]
-    if not raw_rows:
+    data = [(i + 2, r) for i, r in enumerate(all_rows[1:]) if any(cell.strip() for cell in r)]
+    if not data:
         raise AnalysisError(f"{path} has a header but no data rows.", 3)
 
     evidence = {
-        "path": str(path),
-        "columns": header,
-        "aliases_applied": aliases_applied,
-        "rows_read": len(raw_rows),
-        "missing_values": Counter({c: 0 for c in normalised}),
-        "excluded": [],   # (line_no, complaint_id, reason)
-        "warnings": [],   # (line_no, complaint_id, message) - row kept
+        "path": str(path), "columns": header, "aliases": aliases, "rows_read": len(data),
+        "missing": Counter({c: 0 for c in columns}), "excluded": [], "warnings": [],
     }
+    excluded, warnings = evidence["excluded"], evidence["warnings"]
 
-    seen_ids = set()
-    valid = []
-    for line_no, cells in raw_rows:
-        if len(cells) != len(normalised):
-            # Short rows are padded so their missing fields are counted;
-            # extra cells cannot be attributed to a column, so they are dropped and flagged.
-            if len(cells) > len(normalised):
-                evidence["warnings"].append(
-                    (line_no, cells[0].strip() if cells else "",
-                     f"{len(cells) - len(normalised)} extra cell(s) ignored")
-                )
-            cells = (cells + [""] * len(normalised))[: len(normalised)]
-        row = {name: value.strip() for name, value in zip(normalised, cells)}
+    seen, valid = set(), []
+    for line, cells in data:
+        if len(cells) > len(columns):
+            warnings.append((line, cells[0].strip(), f"{len(cells) - len(columns)} extra cell(s) ignored"))
+        cells = (cells + [""] * len(columns))[:len(columns)]
+        row = {name: value.strip() for name, value in zip(columns, cells)}
         cid = row["complaint_id"] or "(blank)"
 
         for name, value in row.items():
-            if value == "":
-                evidence["missing_values"][name] += 1
+            if not value:
+                evidence["missing"][name] += 1
 
-        blanks = [c for c in REQUIRED_VALUES if row[c] == ""]
-        if blanks:
-            evidence["excluded"].append((line_no, cid, f"missing {', '.join(blanks)}"))
-            continue
-
+        blanks = [c for c in REQUIRED_VALUES if not row[c]]
         created = parse_date(row["created_date"])
+        if blanks:
+            excluded.append((line, cid, f"missing {', '.join(blanks)}"))
+            continue
         if created is None:
-            evidence["excluded"].append(
-                (line_no, cid, f"invalid created_date '{row['created_date']}' (expected YYYY-MM-DD)")
-            )
+            excluded.append((line, cid, f"invalid created_date '{row['created_date']}' (expected YYYY-MM-DD)"))
             continue
-
-        if row["complaint_id"] in seen_ids:
-            evidence["excluded"].append((line_no, cid, "duplicate complaint_id (first occurrence kept)"))
+        if row["complaint_id"] in seen:
+            excluded.append((line, cid, "duplicate complaint_id (first occurrence kept)"))
             continue
-        seen_ids.add(row["complaint_id"])
+        seen.add(row["complaint_id"])
 
         is_closed = row["status"].lower() in CLOSED_STATUSES
-        resolved = None
-        if row["resolved_date"]:
-            resolved = parse_date(row["resolved_date"])
-            if resolved is None:
-                evidence["warnings"].append(
-                    (line_no, cid, f"invalid resolved_date '{row['resolved_date']}'; "
-                                   "row counted, excluded from resolution time")
-                )
-            elif resolved < created:
-                evidence["warnings"].append(
-                    (line_no, cid, f"resolved_date {resolved} is before created_date {created}; "
-                                   "row counted, excluded from resolution time")
-                )
-                resolved = None
-            elif not is_closed:
-                evidence["warnings"].append(
-                    (line_no, cid, f"status '{row['status']}' is not closed but has a resolved_date; "
-                                   "date ignored")
-                )
-                resolved = None
-        elif is_closed:
-            evidence["warnings"].append(
-                (line_no, cid, "closed with no resolved_date; counted as closed, "
-                               "resolution time unmeasurable")
-            )
+        resolved = parse_date(row["resolved_date"])
+        if row["resolved_date"] and resolved is None:
+            warnings.append((line, cid, f"invalid resolved_date '{row['resolved_date']}'; "
+                                        "row counted, excluded from resolution time"))
+        elif resolved and resolved < created:
+            warnings.append((line, cid, f"resolved_date {resolved} is before created_date {created}; "
+                                        "row counted, excluded from resolution time"))
+            resolved = None
+        elif resolved and not is_closed:
+            warnings.append((line, cid, f"status '{row['status']}' is not closed but has a resolved_date; "
+                                        "date ignored"))
+            resolved = None
+        elif not resolved and is_closed:
+            warnings.append((line, cid, "closed with no resolved_date; counted as closed, "
+                                        "resolution time unmeasurable"))
 
-        valid.append({
-            "complaint_id": row["complaint_id"],
-            "customer_id": row["customer_id"],
-            "category": row["category"],
-            "status": row["status"],
-            "created_date": created,
-            "resolved_date": resolved,
-            "is_closed": is_closed,
-        })
+        valid.append({**row, "created_date": created, "resolved_date": resolved, "is_closed": is_closed})
 
-    evidence["rows_valid"] = len(valid)
     if not valid:
-        raise AnalysisError(
-            f"No valid rows in {path}: all {len(raw_rows)} row(s) were excluded "
-            f"(first reason: {evidence['excluded'][0][2]}).",
-            3,
-        )
+        raise AnalysisError(f"No valid rows in {path}: all {len(data)} row(s) were excluded "
+                            f"(first reason: {excluded[0][2]}).", 3)
     return valid, evidence
 
 
-# ---------------------------------------------------------------------------
-# Step 2 - calculate summaries
-# ---------------------------------------------------------------------------
+# ---------- Calculate ----------
 
 def pct(part, whole):
     return round(100.0 * part / whole, 1) if whole else None
 
 
-def summarise(rows):
-    total = len(rows)
-    status_counts = Counter(r["status"] for r in rows)
-    category_counts = Counter(r["category"] for r in rows)
-    closed = [r for r in rows if r["is_closed"]]
-
-    top_count = max(category_counts.values())
-    top_categories = sorted(c for c, n in category_counts.items() if n == top_count)
-
-    def resolution_stats(group):
-        measured = [(r["resolved_date"] - r["created_date"]).days
-                    for r in group if r["resolved_date"] is not None]
-        return {
-            "closed_count": len(group),
-            "measured_count": len(measured),
-            "unmeasurable_count": len(group) - len(measured),
-            "avg": round(float(statistics.mean(measured)), 1) if measured else None,
-            "median": round(float(statistics.median(measured)), 1) if measured else None,
-            "min": min(measured) if measured else None,
-            "max": max(measured) if measured else None,
-        }
-
-    resolution_by_category = {
-        cat: resolution_stats([r for r in closed if r["category"] == cat])
-        for cat in sorted(category_counts)
-    }
-
-    return {
-        "total": total,
-        "distinct_customers": len({r["customer_id"] for r in rows}),
-        "open_count": total - len(closed),
-        "closed_count": len(closed),
-        "status_counts": status_counts,
-        "category_counts": category_counts,
-        "top_categories": top_categories,
-        "top_count": top_count,
-        "top_pct": pct(top_count, total),
-        "resolution_overall": resolution_stats(closed),
-        "resolution_by_category": resolution_by_category,
-        "created_min": min(r["created_date"] for r in rows),
-        "created_max": max(r["created_date"] for r in rows),
-    }
-
-
-def ordered(counter):
-    """Largest first, ties alphabetical - stable, reproducible output."""
+def largest_first(counter):
     return sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
-# ---------------------------------------------------------------------------
-# Step 3 - write outputs
-# ---------------------------------------------------------------------------
+def resolution(closed_rows):
+    days = [(r["resolved_date"] - r["created_date"]).days for r in closed_rows if r["resolved_date"]]
+    return {
+        "closed": len(closed_rows),
+        "measured": len(days),
+        "unmeasurable": len(closed_rows) - len(days),
+        "avg": round(float(statistics.mean(days)), 1) if days else None,
+        "median": round(float(statistics.median(days)), 1) if days else None,
+        "min": min(days) if days else None,
+        "max": max(days) if days else None,
+    }
 
-def measure_rows(s, evidence):
-    """Long format, same shape as the 2.2.2 SQL summary: metric/dimension/value/unit."""
+
+def summarise(rows):
+    total = len(rows)
+    closed = [r for r in rows if r["is_closed"]]
+    categories = Counter(r["category"] for r in rows)
+    top_count = max(categories.values())
+    return {
+        "total": total,
+        "customers": len({r["customer_id"] for r in rows}),
+        "open": total - len(closed),
+        "closed": len(closed),
+        "statuses": Counter(r["status"] for r in rows),
+        "categories": categories,
+        "top": sorted(c for c, n in categories.items() if n == top_count),
+        "top_count": top_count,
+        "top_pct": pct(top_count, total),
+        "res_all": resolution(closed),
+        "res_by_cat": {c: resolution([r for r in closed if r["category"] == c]) for c in sorted(categories)},
+        "first_date": min(r["created_date"] for r in rows),
+        "last_date": max(r["created_date"] for r in rows),
+    }
+
+
+# ---------- Write outputs ----------
+
+def measures(s, ev):
     out = []
 
-    def add(metric, dimension, value_of, value, unit, note=""):
-        out.append({
-            "metric": metric, "dimension": dimension, "dimension_value": value_of,
-            "value": "" if value is None else value, "unit": unit, "note": note,
-        })
+    def add(metric, dim, dim_value, value, unit, note=""):
+        out.append({"metric": metric, "dimension": dim, "dimension_value": dim_value,
+                    "value": "" if value is None else value, "unit": unit, "note": note})
 
-    add("rows_read", "load", "all", evidence["rows_read"], "rows")
-    add("rows_excluded", "load", "all", len(evidence["excluded"]), "rows",
-        "incomplete or invalid; see summary")
-    add("rows_with_warnings", "load", "all", len({w[0] for w in evidence["warnings"]}), "rows")
+    add("rows_read", "load", "all", ev["rows_read"], "rows")
+    add("rows_excluded", "load", "all", len(ev["excluded"]), "rows", "incomplete or invalid; see summary")
+    add("rows_with_warnings", "load", "all", len({w[0] for w in ev["warnings"]}), "rows")
     add("complaint_count", "overall", "all", s["total"], "complaints", "valid rows only")
-    add("distinct_customers", "overall", "all", s["distinct_customers"], "customers")
-    add("open_count", "overall", "all", s["open_count"], "complaints", "status not Closed/Resolved")
-    add("open_pct", "overall", "all", pct(s["open_count"], s["total"]), "percent")
-    add("closed_count", "overall", "all", s["closed_count"], "complaints")
-    add("closed_pct", "overall", "all", pct(s["closed_count"], s["total"]), "percent")
+    add("distinct_customers", "overall", "all", s["customers"], "customers")
+    add("open_count", "overall", "all", s["open"], "complaints", "status not Closed/Resolved")
+    add("open_pct", "overall", "all", pct(s["open"], s["total"]), "percent")
+    add("closed_count", "overall", "all", s["closed"], "complaints")
+    add("closed_pct", "overall", "all", pct(s["closed"], s["total"]), "percent")
 
-    for status, n in ordered(s["status_counts"]):
-        add("complaint_count", "status", status, n, "complaints")
-        add("complaint_pct", "status", status, pct(n, s["total"]), "percent")
+    for dim, counter in (("status", s["statuses"]), ("category", s["categories"])):
+        for name, n in largest_first(counter):
+            add("complaint_count", dim, name, n, "complaints")
+            add("complaint_pct", dim, name, pct(n, s["total"]), "percent")
 
-    for cat, n in ordered(s["category_counts"]):
-        add("complaint_count", "category", cat, n, "complaints")
-        add("complaint_pct", "category", cat, pct(n, s["total"]), "percent")
-
-    tie = "tie" if len(s["top_categories"]) > 1 else ""
-    for cat in s["top_categories"]:
+    tie = "tie" if len(s["top"]) > 1 else ""
+    for cat in s["top"]:
         add("highest_volume_category_count", "category", cat, s["top_count"], "complaints", tie)
         add("highest_volume_category_pct", "category", cat, s["top_pct"], "percent", tie)
 
-    def add_resolution(dimension, value_of, r):
+    for dim, name, r in [("overall", "all", s["res_all"])] + [("category", c, r) for c, r in s["res_by_cat"].items()]:
         note = ""
-        if r["measured_count"] == 0:
+        if r["measured"] == 0:
             note = "no measured closed cases: unknown, not 0"
-        elif r["measured_count"] < SMALL_SAMPLE:
-            note = f"small sample (n={r['measured_count']})"
-        add("closed_count", dimension, value_of, r["closed_count"], "complaints")
-        add("resolution_measured_count", dimension, value_of, r["measured_count"], "complaints")
-        add("resolution_unmeasurable_count", dimension, value_of, r["unmeasurable_count"], "complaints",
-            "closed but no usable resolved_date" if r["unmeasurable_count"] else "")
-        add("avg_resolution_days", dimension, value_of, r["avg"], "days", note)
-        add("median_resolution_days", dimension, value_of, r["median"], "days", note)
-        add("min_resolution_days", dimension, value_of, r["min"], "days")
-        add("max_resolution_days", dimension, value_of, r["max"], "days")
-
-    add_resolution("overall", "all", s["resolution_overall"])
-    for cat, r in s["resolution_by_category"].items():
-        add_resolution("category", cat, r)
+        elif r["measured"] < SMALL_SAMPLE:
+            note = f"small sample (n={r['measured']})"
+        add("closed_count", dim, name, r["closed"], "complaints")
+        add("resolution_measured_count", dim, name, r["measured"], "complaints")
+        add("resolution_unmeasurable_count", dim, name, r["unmeasurable"], "complaints",
+            "closed but no usable resolved_date" if r["unmeasurable"] else "")
+        add("avg_resolution_days", dim, name, r["avg"], "days", note)
+        add("median_resolution_days", dim, name, r["median"], "days", note)
+        add("min_resolution_days", dim, name, r["min"], "days")
+        add("max_resolution_days", dim, name, r["max"], "days")
     return out
 
 
-def write_csv(rows, path):
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+def show(value):
+    return "unknown" if value is None else value
 
 
-def fmt(value, suffix=""):
-    return "unknown" if value is None else f"{value}{suffix}"
+def table(headers, rows, numeric=()):
+    align = "".join("---:|" if i in numeric else "---|" for i in range(len(headers)))
+    lines = ["| " + " | ".join(headers) + " |", "|" + align]
+    lines += ["| " + " | ".join(str(v) for v in row) + " |" for row in rows]
+    return lines + [""]
 
 
-def build_markdown(s, evidence, input_name):
-    ro = s["resolution_overall"]
-    top = " and ".join(s["top_categories"])
-    lines = [
-        "# Complaint Analysis Summary",
-        "",
-        "Week 2 | Exercise 2.4.1 · generated by `complaint_analysis.py`, do not edit by hand.",
-        "",
-        f"**Input:** `{input_name}` · **Rows read:** {evidence['rows_read']} · "
-        f"**Rows analysed:** {s['total']} · **Rows excluded:** {len(evidence['excluded'])}",
-        f"**Complaints opened between:** {s['created_min']} and {s['created_max']} (one snapshot)",
-        "",
-        "## Headlines",
-        "",
-        f"- **{s['total']} complaints** from **{s['distinct_customers']} customers**. "
-        f"**{s['open_count']} ({pct(s['open_count'], s['total'])}%) are still open** and "
-        f"{s['closed_count']} ({pct(s['closed_count'], s['total'])}%) are closed.",
+def summary_markdown(s, ev, input_name):
+    ra = s["res_all"]
+    top = " and ".join(s["top"])
+    md = [
+        "# Complaint Analysis Summary", "",
+        "Week 2 | Exercise 2.4.1 · generated by `complaint_analysis.py`, do not edit by hand.", "",
+        f"**Input:** `{input_name}` · **Rows read:** {ev['rows_read']} · "
+        f"**Rows analysed:** {s['total']} · **Rows excluded:** {len(ev['excluded'])}",
+        f"**Complaints opened between:** {s['first_date']} and {s['last_date']} (one snapshot)", "",
+        "## Headlines", "",
+        f"- **{s['total']} complaints** from **{s['customers']} customers**. "
+        f"**{s['open']} ({pct(s['open'], s['total'])}%) are still open** and "
+        f"{s['closed']} ({pct(s['closed'], s['total'])}%) are closed.",
         f"- **Highest-volume category: {top}** with {s['top_count']} complaints "
-        f"({s['top_pct']}% of analysed complaints)"
-        + (" (tied)." if len(s["top_categories"]) > 1 else "."),
-        f"- **Closed cases took {fmt(ro['avg'])} days on average** "
-        f"(median {fmt(ro['median'])}, range {fmt(ro['min'])}–{fmt(ro['max'])}) "
-        f"across {ro['measured_count']} measured closed complaints.",
-        "",
-        "## Definitions",
-        "",
-        "Same rules as the SQL metrics in Exercise 2.2.2.",
-        "",
-        "| Term | Definition |",
-        "|---|---|",
-        "| Complaint count | Number of valid rows (one row per complaint). Excluded rows are not counted. |",
-        "| Open | Status is not `Closed` or `Resolved` (so Open, In Review and Escalated are all open). |",
-        "| Closed | Status is `Closed` or `Resolved`. |",
-        "| Percentage | Count ÷ complaints analysed × 100, to 1 decimal place. |",
-        "| Resolution days | `resolved_date` − `created_date` in whole calendar days, **closed complaints only**. |",
-        "| Unknown | No measurable closed case. This is shown as blank or 'unknown', **never as 0**. |",
-        f"| Small sample | Fewer than {SMALL_SAMPLE} measured closed cases. The average is shown but should not be relied on. |",
-        "",
-        "## Load evidence",
-        "",
-        f"Columns found: `{', '.join(evidence['columns'])}`",
-        "",
+        f"({s['top_pct']}% of analysed complaints){' (tied)' if len(s['top']) > 1 else ''}.",
+        f"- **Closed cases took {show(ra['avg'])} days on average** (median {show(ra['median'])}, "
+        f"range {show(ra['min'])}–{show(ra['max'])}) across {ra['measured']} measured closed complaints.", "",
+        "## Definitions", "",
+        "Same rules as the SQL metrics in Exercise 2.2.2.", "",
     ]
-    if evidence["aliases_applied"]:
-        mapped = ", ".join(f"`{k}` → `{v}`" for k, v in evidence["aliases_applied"].items())
-        lines += [f"Column names mapped to the required names: {mapped}.", ""]
+    md += table(["Term", "Definition"], [
+        ["Complaint count", "Number of valid rows (one row per complaint). Excluded rows are not counted."],
+        ["Open", "Status is not `Closed` or `Resolved` (so Open, In Review and Escalated are all open)."],
+        ["Closed", "Status is `Closed` or `Resolved`."],
+        ["Percentage", "Count ÷ complaints analysed × 100, to 1 decimal place."],
+        ["Resolution days", "`resolved_date` − `created_date` in whole calendar days, **closed complaints only**."],
+        ["Unknown", "No measurable closed case. This is shown as blank or 'unknown', **never as 0**."],
+        ["Small sample", f"Fewer than {SMALL_SAMPLE} measured closed cases. "
+                         "The average is shown but should not be relied on."],
+    ])
 
-    lines += ["| Column | Missing values | Meaning |", "|---|---|---|"]
-    meaning = {
-        "resolved_date": "Expected for open complaints",
-        "account_id": "Optional (not every complaint is tied to an account)",
-    }
-    for col, n in evidence["missing_values"].items():
-        req = "Required" if col in REQUIRED_VALUES else meaning.get(col, "Optional")
-        lines.append(f"| {col} | {n} | {req} |")
-    lines.append("")
-
-    if evidence["excluded"]:
-        lines += ["**Excluded rows:**", "", "| Line | complaint_id | Reason |", "|---|---|---|"]
-        lines += [f"| {ln} | {cid} | {why} |" for ln, cid, why in evidence["excluded"]]
-        lines.append("")
+    md += ["## Load evidence", "", f"Columns found: `{', '.join(ev['columns'])}`", ""]
+    if ev["aliases"]:
+        mapped = ", ".join(f"`{k}` → `{v}`" for k, v in ev["aliases"].items())
+        md += [f"Column names mapped to the required names: {mapped}.", ""]
+    notes = {"resolved_date": "Expected for open complaints",
+             "account_id": "Optional (not every complaint is tied to an account)"}
+    md += table(["Column", "Missing values", "Meaning"],
+                [[c, n, "Required" if c in REQUIRED_VALUES else notes.get(c, "Optional")]
+                 for c, n in ev["missing"].items()])
+    if ev["excluded"]:
+        md += ["**Excluded rows:**", ""] + table(["Line", "complaint_id", "Reason"], ev["excluded"])
     else:
-        lines += ["No rows were excluded: every row has all required values and a valid created_date.", ""]
-    if evidence["warnings"]:
-        lines += ["**Warnings (row kept):**", "", "| Line | complaint_id | Warning |", "|---|---|---|"]
-        lines += [f"| {ln} | {cid} | {msg} |" for ln, cid, msg in evidence["warnings"]]
-        lines.append("")
+        md += ["No rows were excluded: every row has all required values and a valid created_date.", ""]
+    if ev["warnings"]:
+        md += ["**Warnings (row kept):**", ""] + table(["Line", "complaint_id", "Warning"], ev["warnings"])
     else:
-        lines += ["No data-consistency warnings: every closed complaint has a valid resolved_date "
-                  "on or after its created_date, and no open complaint has a resolved_date.", ""]
+        md += ["No data-consistency warnings: every closed complaint has a valid resolved_date "
+               "on or after its created_date, and no open complaint has a resolved_date.", ""]
 
-    lines += ["## Status", "", "| Status | Complaints | % |", "|---|---:|---:|"]
-    lines += [f"| {k} | {n} | {pct(n, s['total'])} |" for k, n in ordered(s["status_counts"])]
-    lines += ["", "## Category", "", "| Category | Complaints | % |", "|---|---:|---:|"]
-    lines += [f"| {k} | {n} | {pct(n, s['total'])} |" for k, n in ordered(s["category_counts"])]
+    md += ["## Status", ""] + table(["Status", "Complaints", "%"],
+                                    [[k, n, pct(n, s["total"])] for k, n in largest_first(s["statuses"])], (1, 2))
+    md += ["## Category", ""] + table(["Category", "Complaints", "%"],
+                                      [[k, n, pct(n, s["total"])] for k, n in largest_first(s["categories"])], (1, 2))
 
-    lines += [
-        "",
-        "## Closed-case resolution by category",
-        "",
-        "| Category | Closed | Measured | Avg days | Median | Min | Max | Note |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
-    ]
-    small = []
-    for cat, r in sorted(s["resolution_by_category"].items(),
-                         key=lambda kv: (kv[1]["avg"] is None, -(kv[1]["avg"] or 0), kv[0])):
-        note = ""
-        if r["measured_count"] == 0:
-            note = "No closed cases: unknown"
-        elif r["measured_count"] < SMALL_SAMPLE:
-            note = "Small sample"
-            small.append(cat)
-        lines.append(
-            f"| {cat} | {r['closed_count']} | {r['measured_count']} | {fmt(r['avg'])} | "
-            f"{fmt(r['median'])} | {fmt(r['min'])} | {fmt(r['max'])} | {note} |"
-        )
-    lines.append(
-        f"| **All** | {ro['closed_count']} | {ro['measured_count']} | {fmt(ro['avg'])} | "
-        f"{fmt(ro['median'])} | {fmt(ro['min'])} | {fmt(ro['max'])} | |"
-    )
+    by_avg = sorted(s["res_by_cat"].items(), key=lambda kv: (kv[1]["avg"] is None, -(kv[1]["avg"] or 0), kv[0]))
+    small = [c for c, r in by_avg if 0 < r["measured"] < SMALL_SAMPLE]
+    res_rows = []
+    for cat, r in by_avg:
+        note = "No closed cases: unknown" if r["measured"] == 0 else "Small sample" if cat in small else ""
+        res_rows.append([cat, r["closed"], r["measured"], show(r["avg"]), show(r["median"]),
+                         show(r["min"]), show(r["max"]), note])
+    res_rows.append(["**All**", ra["closed"], ra["measured"], show(ra["avg"]), show(ra["median"]),
+                     show(ra["min"]), show(ra["max"]), ""])
+    md += ["## Closed-case resolution by category", ""]
+    md += table(["Category", "Closed", "Measured", "Avg days", "Median", "Min", "Max", "Note"], res_rows, range(1, 7))
 
-    with_avg = {c: r for c, r in s["resolution_by_category"].items() if r["avg"] is not None}
-    obs = [
-        "",
-        "## Observations",
-        "",
-        "These statements are supported directly by the figures above.",
-        "",
-        f"1. {top} is the largest category at {s['top_pct']}% of complaints.",
-        f"2. Most complaints are still open ({s['open_count']} of {s['total']}). "
-        f"Escalated and In Review together make up "
-        f"{s['status_counts'].get('Escalated', 0) + s['status_counts'].get('In Review', 0)} complaints.",
-    ]
-    if with_avg:
-        slow = max(with_avg, key=lambda c: (with_avg[c]["avg"], c))
-        fast = min(with_avg, key=lambda c: (with_avg[c]["avg"], c))
-        obs.append(
-            f"3. Among closed cases, {slow} had the longest average resolution "
-            f"({with_avg[slow]['avg']} days, n={with_avg[slow]['measured_count']}) and {fast} the shortest "
-            f"({with_avg[fast]['avg']} days, n={with_avg[fast]['measured_count']})."
-        )
+    in_progress = s["statuses"].get("Escalated", 0) + s["statuses"].get("In Review", 0)
+    md += ["## Observations", "", "These statements are supported directly by the figures above.", "",
+           f"1. {top} is the largest category at {s['top_pct']}% of complaints.",
+           f"2. Most complaints are still open ({s['open']} of {s['total']}). "
+           f"Escalated and In Review together make up {in_progress} complaints."]
+    measured = [(c, r) for c, r in by_avg if r["avg"] is not None]
+    if measured:
+        (slow, rs), (fast, rf) = measured[0], measured[-1]
+        md.append(f"3. Among closed cases, {slow} had the longest average resolution "
+                  f"({rs['avg']} days, n={rs['measured']}) and {fast} the shortest "
+                  f"({rf['avg']} days, n={rf['measured']}).")
     if small:
-        obs.append(
-            f"4. Resolution averages for {' and '.join([', '.join(small[:-1]), small[-1]] if len(small) > 1 else small)} "
-            f"rest on fewer than {SMALL_SAMPLE} closed cases. "
-            "Treat them as indicative only."
-        )
-    obs += [
-        "",
-        "## What this analysis does not show",
-        "",
-        "- **No trends.** This is a single snapshot. The numbers say nothing about whether volume or "
-        "resolution time is rising or falling.",
-        "- **No causes.** Category volume does not explain *why* customers complained.",
-        "- **Resolution time covers closed cases only.** It says nothing about how long the open "
-        f"complaints ({s['open_count']}) will take, and the averages may change as those cases close.",
-        "- The source data is synthetic training data.",
-        "",
-    ]
-    return "\n".join(lines + obs)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-def print_load_evidence(evidence):
-    print(f"Loaded {evidence['path']}")
-    if evidence["aliases_applied"]:
-        print("  Column aliases applied: "
-              + ", ".join(f"{k} -> {v}" for k, v in evidence["aliases_applied"].items()))
-    print(f"  Rows read: {evidence['rows_read']}  valid: {evidence['rows_valid']}  "
-          f"excluded: {len(evidence['excluded'])}  warnings: {len(evidence['warnings'])}")
-    print("  Missing values: " + ", ".join(f"{k}={v}" for k, v in evidence["missing_values"].items()))
-    for ln, cid, why in evidence["excluded"]:
-        print(f"  WARNING line {ln} ({cid}) excluded: {why}", file=sys.stderr)
-    for ln, cid, msg in evidence["warnings"]:
-        print(f"  WARNING line {ln} ({cid}): {msg}", file=sys.stderr)
+        names = small[0] if len(small) == 1 else ", ".join(small[:-1]) + " and " + small[-1]
+        md.append(f"4. Resolution averages for {names} rest on fewer than {SMALL_SAMPLE} closed cases. "
+                  "Treat them as indicative only.")
+    md += ["", "## What this analysis does not show", "",
+           "- **No trends.** This is a single snapshot. The numbers say nothing about whether volume or "
+           "resolution time is rising or falling.",
+           "- **No causes.** Category volume does not explain *why* customers complained.",
+           "- **Resolution time covers closed cases only.** It says nothing about how long the open "
+           f"complaints ({s['open']}) will take, and the averages may change as those cases close.",
+           "- The source data is synthetic training data.", ""]
+    return "\n".join(md)
 
 
 def run(input_path, out_dir):
-    rows, evidence = load_complaints(input_path)
-    print_load_evidence(evidence)
+    rows, ev = load_complaints(input_path)
 
-    summary = summarise(rows)
+    print(f"Loaded {ev['path']}")
+    if ev["aliases"]:
+        print("  Column aliases applied: " + ", ".join(f"{k} -> {v}" for k, v in ev["aliases"].items()))
+    print(f"  Rows read: {ev['rows_read']}  valid: {len(rows)}  "
+          f"excluded: {len(ev['excluded'])}  warnings: {len(ev['warnings'])}")
+    print("  Missing values: " + ", ".join(f"{k}={v}" for k, v in ev["missing"].items()))
+    for line, cid, reason in ev["excluded"]:
+        print(f"  WARNING line {line} ({cid}) excluded: {reason}", file=sys.stderr)
+    for line, cid, message in ev["warnings"]:
+        print(f"  WARNING line {line} ({cid}): {message}", file=sys.stderr)
+
+    s = summarise(rows)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    write_csv(measure_rows(summary, evidence), out_dir / OUTPUT_CSV)
-    (out_dir / OUTPUT_MD).write_text(build_markdown(summary, evidence, Path(input_path).name),
-                                     encoding="utf-8")
+    rows_out = measures(s, ev)
+    with open(out_dir / OUTPUT_CSV, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(rows_out[0]))
+        writer.writeheader()
+        writer.writerows(rows_out)
+    (out_dir / OUTPUT_MD).write_text(summary_markdown(s, ev, Path(input_path).name), encoding="utf-8")
 
-    print(f"Complaints analysed: {summary['total']}  open: {summary['open_count']}  "
-          f"closed: {summary['closed_count']}")
-    print(f"Highest-volume category: {' / '.join(summary['top_categories'])} "
-          f"({summary['top_count']}, {summary['top_pct']}%)")
+    print(f"Complaints analysed: {s['total']}  open: {s['open']}  closed: {s['closed']}")
+    print(f"Highest-volume category: {' / '.join(s['top'])} ({s['top_count']}, {s['top_pct']}%)")
     print(f"Wrote {out_dir / OUTPUT_CSV}")
     print(f"Wrote {out_dir / OUTPUT_MD}")
-    return summary, evidence
 
 
-# ---------------------------------------------------------------------------
-# Step 4 - failure tests (python3 complaint_analysis.py --self-test)
-# Fixtures are written to a temporary folder, so no test files live in the repo
-# and the real outputs in this folder are never overwritten.
-# ---------------------------------------------------------------------------
+# ---------- Failure tests (--self-test) ----------
 
 HEADER = "complaint_id,customer_id,account_id,category,status,date_opened,date_closed,channel,priority\n"
 FIXTURES = {
-    "incomplete_rows.csv": HEADER + (
-        "T001,C0001,A0001,Fees,Open,2026-01-01,,Web,Low\n"                          # valid, open
-        "T002,C0002,,Fees,Closed,2026-01-01,2026-01-05,Phone,High\n"                # valid, closed, 4 days
-        "T003,C0003,A0003,,Open,2026-01-02,,Email,Low\n"                            # missing category
-        "T004,,A0004,Fees,,2026-01-02,,Email,Low\n"                                 # missing customer_id + status
-        "T005,C0005,A0005,Fees,Open,31/01/2026,,Web,Medium\n"                       # bad date format
-        "T001,C0006,A0006,Card or Transaction Dispute,Open,2026-01-03,,Web,Low\n"   # duplicate id
-        "T007,C0007,A0007,Fees,Closed,2026-01-04,,Branch,Medium\n"                  # closed, no date
-        "T008,C0008,A0008,Card or Transaction Dispute,Closed,2026-02-10,2026-02-01,Phone,High\n"  # closed before opened
-        "T009,C0009,A0009,Card or Transaction Dispute,In Review,2026-02-11,2026-02-12,Web,Low\n"  # open with closed date
-        "T010,C0010,A0010,Card or Transaction Dispute,Closed,2026-02-12,not a date,Email,Low\n"   # bad closed date
-        "T011,C0011,A0011\n"                                                        # truncated row
-        "\n"                                                                        # blank line (ignored)
-        "T013,C0013,A0013,Mortgage Servicing,Resolved,2026-03-01,2026-03-11,Branch,Medium\n"      # Resolved = closed, 10 days
-    ),
+    "incomplete_rows.csv": HEADER
+    + "T001,C0001,A0001,Fees,Open,2026-01-01,,Web,Low\n"
+    + "T002,C0002,,Fees,Closed,2026-01-01,2026-01-05,Phone,High\n"
+    + "T003,C0003,A0003,,Open,2026-01-02,,Email,Low\n"
+    + "T004,,A0004,Fees,,2026-01-02,,Email,Low\n"
+    + "T005,C0005,A0005,Fees,Open,31/01/2026,,Web,Medium\n"
+    + "T001,C0006,A0006,Card or Transaction Dispute,Open,2026-01-03,,Web,Low\n"
+    + "T007,C0007,A0007,Fees,Closed,2026-01-04,,Branch,Medium\n"
+    + "T008,C0008,A0008,Card or Transaction Dispute,Closed,2026-02-10,2026-02-01,Phone,High\n"
+    + "T009,C0009,A0009,Card or Transaction Dispute,In Review,2026-02-11,2026-02-12,Web,Low\n"
+    + "T010,C0010,A0010,Card or Transaction Dispute,Closed,2026-02-12,not a date,Email,Low\n"
+    + "T011,C0011,A0011\n"
+    + "\n"
+    + "T013,C0013,A0013,Mortgage Servicing,Resolved,2026-03-01,2026-03-11,Branch,Medium\n",
     "missing_column.csv": "complaint_id,customer_id,category,status,date_opened\nT001,C0001,Fees,Open,2026-01-01\n",
     "header_only.csv": "complaint_id,customer_id,category,status,created_date,resolved_date\n",
-    "all_rows_invalid.csv": ("complaint_id,customer_id,category,status,created_date,resolved_date\n"
-                             "T001,C0001,,Open,2026-01-01,\nT002,C0002,,Closed,2026-01-01,2026-01-03\n"),
+    "all_rows_invalid.csv": "complaint_id,customer_id,category,status,created_date,resolved_date\n"
+                            "T001,C0001,,Open,2026-01-01,\nT002,C0002,,Closed,2026-01-01,2026-01-03\n",
     "empty.csv": "",
     "not_really.xlsx": "this is plain text, not a spreadsheet\n",
 }
 
+EXPECTED_INCOMPLETE = {
+    ("rows_read", "load", "all"): "12",
+    ("rows_excluded", "load", "all"): "5",
+    ("rows_with_warnings", "load", "all"): "4",
+    ("complaint_count", "overall", "all"): "7",
+    ("closed_count", "overall", "all"): "5",
+    ("resolution_measured_count", "overall", "all"): "2",
+    ("resolution_unmeasurable_count", "overall", "all"): "3",
+    ("avg_resolution_days", "overall", "all"): "7.0",
+    ("avg_resolution_days", "category", "Card or Transaction Dispute"): "",
+    ("highest_volume_category_count", "category", "Fees"): "3",
+    ("highest_volume_category_count", "category", "Card or Transaction Dispute"): "3",
+}
+
 
 def run_self_tests():
-    results = []
-
-    def case(name, args, expect_code, expect_in, check=None):
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = main(args)
-        text = out.getvalue() + err.getvalue()
-        ok = code == expect_code and all(s in text for s in expect_in)
-        detail = ""
-        if ok and check:
-            ok, detail = check()
-        results.append((name, expect_code, code, ok, err.getvalue().strip().splitlines(), detail))
-
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for name, content in FIXTURES.items():
             (tmp / name).write_text(content, encoding="utf-8")
         out = tmp / "out"
 
-        case("Missing file", [str(tmp / "does_not_exist.csv"), "--out-dir", str(out)],
-             2, ["ERROR: Input file not found"])
-        case("Path is a folder", [str(tmp), "--out-dir", str(out)],
-             2, ["ERROR: Input path is not a file"])
-        case("Empty file", [str(tmp / "empty.csv"), "--out-dir", str(out)],
-             3, ["ERROR:", "is empty"])
-        case("Corrupt .xlsx", [str(tmp / "not_really.xlsx"), "--out-dir", str(out)],
-             2, ["ERROR: Could not read"])
-        case("Missing required column", [str(tmp / "missing_column.csv"), "--out-dir", str(out)],
-             3, ["missing required column(s): resolved_date"])
-        case("Header but no rows", [str(tmp / "header_only.csv"), "--out-dir", str(out)],
-             3, ["has a header but no data rows"])
-        case("Every row incomplete", [str(tmp / "all_rows_invalid.csv"), "--out-dir", str(out)],
-             3, ["No valid rows", "missing category"])
+        cases = [
+            ("Missing file", tmp / "does_not_exist.csv", 2, ["ERROR: Input file not found"]),
+            ("Path is a folder", tmp, 2, ["ERROR: Input path is not a file"]),
+            ("Empty file", tmp / "empty.csv", 3, ["ERROR:", "is empty"]),
+            ("Corrupt .xlsx", tmp / "not_really.xlsx", 2, ["ERROR: Could not read"]),
+            ("Missing required column", tmp / "missing_column.csv", 3,
+             ["missing required column(s): resolved_date"]),
+            ("Header but no rows", tmp / "header_only.csv", 3, ["has a header but no data rows"]),
+            ("Every row incomplete", tmp / "all_rows_invalid.csv", 3, ["No valid rows", "missing category"]),
+            ("Incomplete rows (run continues)", tmp / "incomplete_rows.csv", 0,
+             ["excluded: missing category", "excluded: missing customer_id, status",
+              "invalid created_date '31/01/2026'", "duplicate complaint_id",
+              "closed with no resolved_date", "is before created_date",
+              "is not closed but has a resolved_date", "invalid resolved_date 'not a date'",
+              "excluded: missing category, status, created_date"]),
+        ]
 
-        def check_incomplete():
-            got = {(r["metric"], r["dimension"], r["dimension_value"]): r["value"]
-                   for r in csv.DictReader(open(out / OUTPUT_CSV, encoding="utf-8"))}
-            expected = {
-                ("rows_read", "load", "all"): "12",
-                ("rows_excluded", "load", "all"): "5",
-                ("rows_with_warnings", "load", "all"): "4",
-                ("complaint_count", "overall", "all"): "7",
-                ("closed_count", "overall", "all"): "5",
-                ("resolution_measured_count", "overall", "all"): "2",
-                ("resolution_unmeasurable_count", "overall", "all"): "3",
-                ("avg_resolution_days", "overall", "all"): "7.0",
-                ("avg_resolution_days", "category", "Card or Transaction Dispute"): "",
-                ("highest_volume_category_count", "category", "Fees"): "3",
-                ("highest_volume_category_count", "category", "Card or Transaction Dispute"): "3",
-            }
-            wrong = [f"{k}: expected '{v}', got '{got.get(k)}'" for k, v in expected.items() if got.get(k) != v]
-            return (not wrong), ("; ".join(wrong) if wrong else
-                                 "7 analysed, 5 excluded, 4 warnings, Card resolution blank (unknown), Fees/Card tie")
+        passed = 0
+        for name, path, want_code, want_text in cases:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = main([str(path), "--out-dir", str(out)])
+            ok = code == want_code and all(t in stdout.getvalue() + stderr.getvalue() for t in want_text)
 
-        case("Incomplete rows (run continues)", [str(tmp / "incomplete_rows.csv"), "--out-dir", str(out)],
-             0, ["excluded: missing category", "excluded: missing customer_id, status",
-                 "invalid created_date '31/01/2026'", "duplicate complaint_id",
-                 "closed with no resolved_date", "is before created_date",
-                 "is not closed but has a resolved_date", "invalid resolved_date 'not a date'",
-                 "excluded: missing category, status, created_date"],
-             check_incomplete)
+            detail = ""
+            if ok and want_code == 0:
+                with open(out / OUTPUT_CSV, encoding="utf-8") as fh:
+                    got = {(r["metric"], r["dimension"], r["dimension_value"]): r["value"] for r in csv.DictReader(fh)}
+                wrong = [f"{k}: expected '{v}', got '{got.get(k)}'"
+                         for k, v in EXPECTED_INCOMPLETE.items() if got.get(k) != v]
+                ok = not wrong
+                detail = "; ".join(wrong) or \
+                    "7 analysed, 5 excluded, 4 warnings, Card resolution blank (unknown), Fees/Card tie"
 
-    passed = sum(1 for r in results if r[3])
-    for name, want, got, ok, err_lines, detail in results:
-        print(f"[{'PASS' if ok else 'FAIL'}] {name}: expected exit {want}, got {got}")
-        for line in err_lines:
-            print(f"        {line.strip()}")
-        if detail:
-            print(f"        check: {detail}")
-    print(f"\n{passed}/{len(results)} failure tests passed")
-    return 0 if passed == len(results) else 1
+            passed += ok
+            print(f"[{'PASS' if ok else 'FAIL'}] {name}: expected exit {want_code}, got {code}")
+            for line in stderr.getvalue().strip().splitlines():
+                print(f"        {line.strip()}")
+            if detail:
+                print(f"        check: {detail}")
+
+    print(f"\n{passed}/{len(cases)} failure tests passed")
+    return 0 if passed == len(cases) else 1
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Validate and summarise complaint data (.csv or .xlsx).")
-    parser.add_argument("input", nargs="?", default=str(HERE / "complaints.csv"),
-                        help="complaint .csv or .xlsx (default: complaints.csv next to this script)")
-    parser.add_argument("--out-dir", default=str(HERE),
-                        help="folder for the output CSV and Markdown (default: this folder)")
-    parser.add_argument("--self-test", action="store_true",
-                        help="run the missing-file and incomplete-row tests, then exit")
+    parser.add_argument("input", nargs="?", default=str(HERE / "complaints.csv"))
+    parser.add_argument("--out-dir", default=str(HERE))
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
+
     if args.self_test:
         return run_self_tests()
     try:

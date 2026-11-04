@@ -77,7 +77,7 @@ No data-consistency warnings: every closed complaint has a valid resolved_date o
 | Mortgage Servicing | 9 | 9 | 9.4 | 9.0 | 3 | 18 |  |
 | Digital Banking | 4 | 4 | 8.2 | 6.0 | 2 | 19 | Small sample |
 | Service Quality | 6 | 6 | 6.2 | 5.0 | 1 | 15 |  |
-| **All** | 34 | 34 | 10.1 | 9.0 | 1 | 20 | |
+| **All** | 34 | 34 | 10.1 | 9.0 | 1 | 20 |  |
 
 ## Observations
 
