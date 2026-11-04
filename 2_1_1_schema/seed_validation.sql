@@ -2,7 +2,7 @@
 -- seed_validation_queries.sql
 -- Banking Complaint Resolution Assistant — seed data validation
 --
--- Run AFTER database_schema.sql and seeddatacrs.sql.
+-- Run AFTER database_schema.sql (which creates the tables and loads the seed data).
 -- Returns ONE result table (so it shows fully in the Supabase SQL Editor):
 --   section | check_no | check_name | expected | actual | result | detail
 --

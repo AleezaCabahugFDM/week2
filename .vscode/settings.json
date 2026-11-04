@@ -1,8 +1,0 @@
-{
-    "python.terminal.useEnvFile": true,
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-    "python.analysis.extraPaths": [
-        "2_4_2_Repositories/src",
-        "2_4_1_PythonAnalysis"
-    ]
-}
