@@ -7,15 +7,17 @@ src/data/database_manager.py      connection + transaction lifecycle
 src/data/customer_repository.py   CustomerRepository.get_by_id
 src/data/account_repository.py    AccountRepository.get_for_customer
 src/data/complaint_repository.py  ComplaintRepository.get_by_id / get_for_customer / create
-tests/test_repositories.py        valid, missing and failure tests
+src/main.py                       FastAPI app over the repositories
+tests/test_repositories.py        valid, missing and failure tests (repositories)
+tests/test_api.py                 valid, missing and failure tests (API)
 ```
 
 ## Setup
 
-Requires Python 3.9+ and `psycopg2`.
+Requires Python 3.9+.
 
 ```bash
-pip install psycopg2-binary
+python3 -m pip install --user psycopg2-binary fastapi uvicorn httpx
 ```
 
 Set these environment variables. The names come from `environment_example.txt`.
@@ -51,6 +53,32 @@ with DatabaseManager.from_env() as db:
 
 Run from a folder where `src` is on the path, for example `PYTHONPATH=src python3 your_script.py`.
 
+## API (FastAPI)
+
+```bash
+cd src && python3 -m uvicorn main:app --reload
+```
+
+Open http://127.0.0.1:8000/docs to try the endpoints.
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/customers/{customer_id}` | Customer, or 404 |
+| GET | `/customers/{customer_id}/accounts` | List of accounts (may be `[]`) |
+| GET | `/customers/{customer_id}/complaints` | List of complaints (may be `[]`) |
+| GET | `/complaints/{complaint_id}` | Complaint, or 404 |
+| POST | `/complaints` | 201 with the created complaint |
+
+POST errors:
+- **409:** the complaint ID already exists.
+- **422:** a bad priority or status, an unknown customer or account, another customer's account, or a request body with missing fields.
+
+Other errors:
+- **500:** database settings are missing. The response names the variable, never its value.
+- **503:** the database can't be reached.
+
+Each request opens one connection and closes it afterwards. The API only converts results and errors into HTTP responses, and all data access goes through the repositories.
+
 ## Responsibilities
 
 | Component | Does | Does not |
@@ -58,7 +86,8 @@ Run from a folder where `src` is on the path, for example `PYTHONPATH=src python
 | `DatabaseManager` | Reads settings, opens and closes the connection, commits on success, rolls back on error, always closes the cursor | Run queries for callers, print or log the password |
 | Repositories | Run parameterised SQL and return dataclass records (`None` or `[]` when nothing is found) | Make business decisions (priority, routing, approval, eligibility) |
 | Database | Enforces data rules (allowed priorities and statuses, keys, account belongs to customer) | — |
-| Callers (services, APIs, agents) | Business logic, then call repositories | Write SQL |
+| `src/main.py` (API) | Turns HTTP requests into repository calls, and results and errors into status codes | Write SQL, make business decisions |
+| Callers (services, agents) | Business logic, then call repositories or the API | Write SQL |
 
 Database errors are not hidden. For example, `CheckViolation` for priority `Urgent`, `UniqueViolation` for a duplicate ID, or `ForeignKeyViolation` for another customer's account. The transaction is rolled back first, so nothing partial is saved and the connection stays usable.
 
@@ -74,10 +103,10 @@ Database errors are not hidden. For example, `CheckViolation` for priority `Urge
 python3 -m unittest discover -s tests -v
 ```
 
-- **Without database variables:** the 4 config and connection tests run, and the 16 database tests are skipped.
-- **With database variables:** all 20 tests run against the 2.1.1 schema. They insert their own `TST_` rows and delete them afterwards, so real data is not changed.
+- **Without database variables:** the 7 config, connection and request tests run, and the 22 database tests are skipped.
+- **With database variables:** all 29 tests run against the 2.1.1 schema. They insert their own `TST_` rows and delete them afterwards, so real data is not changed.
 
-Last run: 20/20 passed on a local PostgreSQL 18 copy of the 2.1.1 schema and seed data, and no `TST_` rows were left behind.
+Last run: 29/29 passed (20 repository tests and 9 API tests) on a local PostgreSQL 18 copy of the 2.1.1 schema and seed data, and no `TST_` rows were left behind.
 
 | Group | Tests |
 |---|---|
