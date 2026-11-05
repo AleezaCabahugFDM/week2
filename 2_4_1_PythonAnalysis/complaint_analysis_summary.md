@@ -1,6 +1,6 @@
 # Complaint Analysis Summary
 
-Week 2 | Exercise 2.4.1 · made by `complaint_analysis.py` from `complaints.csv`, do not edit by hand.
+Week 2 | Exercise 2.4.1 · made by `complaint_analysis.py`, do not edit by hand.
 
 ## Headlines
 

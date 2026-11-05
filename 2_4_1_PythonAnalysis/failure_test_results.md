@@ -4,7 +4,7 @@ Week 2 | Exercise 2.4.1 · Step 4
 
 **Script:** `complaint_analysis.py` · **Python:** 3.9.6, standard library only · **Run on:** 2026-11-05
 
-Each case below was run from the command line. The output is copied from the real run.
+Each case below was run from the command line, inside this folder (the output files are written to the folder you run it from). The output is copied from the real run.
 
 ## How it behaves
 
@@ -46,13 +46,14 @@ T008,C0008,A0008,Card,Resolved,2026-03-01,2026-03-11,Web,Low
 ```text
 $ python3 complaint_analysis.py incomplete_rows.csv
 Rows read: 8  valid: 5  skipped: 3
+Missing values: {'complaint_id': 0, 'customer_id': 1, 'account_id': 1, 'category': 1, 'status': 1, 'created_date': 0, 'resolved_date': 5, 'channel': 0, 'priority': 0}
 WARNING line 4 skipped: missing category
 WARNING line 5 skipped: missing customer_id, status
 WARNING line 6 skipped: bad created_date '31/01/2026'
 WARNING line 7 (T006): closed but no usable resolved_date, not used for resolution time
 WARNING line 8 (T007): closed but no usable resolved_date, not used for resolution time
 Complaints: 5  open: 1  closed: 4
-Highest-volume category: Fees (3, 60.0%)
+Highest-volume category: Fees 3 60.0%
 Wrote complaint_analysis_output.csv and complaint_analysis_summary.md
 ```
 
@@ -73,9 +74,9 @@ Wrote complaint_analysis_output.csv and complaint_analysis_summary.md
 ```text
 $ python3 complaint_analysis.py complaints.csv
 Rows read: 120  valid: 120  skipped: 0
-Missing values: complaint_id=0, customer_id=0, account_id=39, category=0, status=0, created_date=0, resolved_date=86, channel=0, priority=0
+Missing values: {'complaint_id': 0, 'customer_id': 0, 'account_id': 39, 'category': 0, 'status': 0, 'created_date': 0, 'resolved_date': 86, 'channel': 0, 'priority': 0}
 Complaints: 120  open: 86  closed: 34
-Highest-volume category: Mortgage Servicing (31, 25.8%)
+Highest-volume category: Mortgage Servicing 31 25.8%
 ```
 
 ## Known limitations
