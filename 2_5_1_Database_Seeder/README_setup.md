@@ -66,9 +66,9 @@ python3 seed_database.py --create-db --reset
 | `--strict` | Roll back the whole run if any row is rejected |
 | `--dbname NAME` | Use a different database than `DB_NAME` (e.g. a scratch copy) |
 | `--data-dir DIR` | Load CSVs from another folder (default `data/`) |
-| `--schema FILE`, `--log FILE`, `--report FILE` | Override default paths |
+| `--log FILE`, `--report FILE` | Write the log or report somewhere else |
 
-Exit codes: `0` committed, `1` integrity or strict failure (rolled back), `2` setup problem such as a missing header, missing file, existing schema without `--reset`, or no connection (nothing changed), `3` unexpected error (rolled back).
+Exit codes: `0` success (committed), `1` failure (nothing saved). The log says why: a missing header or file, existing tables without `--reset`, no connection, an integrity failure, or a rejected row under `--strict`.
 
 ## Expected output
 
@@ -128,7 +128,7 @@ Data-quality issue reported, not fixed: 37 of the 60 service requests are dated 
 
 The whole run is **one transaction**. PostgreSQL DDL is transactional, so the reset, table creation and inserts either all commit or all roll back. A failed run leaves the database exactly as it was before you ran the command.
 
-1. **Initialize**: run the 2.1.1 DDL in dependency order (employee → customer → account → complaint → …). Each table is logged as it is created. Existing tables are only dropped with `--reset`.
+1. **Initialize**: run the 2.1.1 DDL, which creates the tables in dependency order (employee → customer → account → complaint → …). The log lists the 16 tables created. Existing tables are only dropped with `--reset`.
 2. **Validate**: read every CSV first. A missing file or missing required header is critical and stops the run before any insert.
 3. **Load** in FK order. Each row is checked against the rules in `seed_validation_rules.md`, and an invalid row is rejected with a logged reason:
    - required values present, no duplicate key in the file
@@ -159,7 +159,7 @@ python3 seed_database.py --dbname complaints_seed --reset --strict --data-dir te
 python3 seed_database.py --dbname complaints_seed --reset --data-dir test_data/missing_header
 ```
 
-Expected results: 11 rows rejected and the rest committed; then the same run rolled back with exit 1; then a missing `customer_id` header with exit 2. After the last two, the database still holds what the first run committed.
+Expected results: 11 rows rejected and the rest committed; then the same run rolled back with exit 1; then a missing `customer_id` header, also exit 1. After the last two, the database still holds what the first run committed.
 
 Check counts directly:
 

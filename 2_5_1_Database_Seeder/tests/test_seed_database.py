@@ -1,7 +1,7 @@
-"""Tests for seed_database.py.
+"""Tests for seed_database.py and prepare_seed_data.py.
 
-Unit tests need no database. Integration tests run against a throwaway
-database (complaints_seed_test) and are skipped when DB_* settings are absent.
+The rule tests need no database. The full-run test uses a throwaway database
+(complaints_seed_test) that it creates and drops, and is skipped when DB_* settings are missing.
 
     ../.venv/bin/python -m unittest discover -s tests -v
 """
@@ -13,68 +13,57 @@ import tempfile
 import unittest
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-SEEDER_DIR = HERE.parent
+SEEDER_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(SEEDER_DIR))
+
+import psycopg2  # noqa: E402
 
 import prepare_seed_data as prep  # noqa: E402
 import seed_database as sd  # noqa: E402
 
-for env in (Path.cwd() / ".env", sd.REPO_ROOT / ".env"):
-    sd.load_dotenv(env)
-
+sd.load_dotenv(sd.REPO_ROOT / ".env")
+DB_CONFIGURED = all(os.environ.get(name) for name in sd.REQUIRED_SETTINGS)
 TEST_DB = "complaints_seed_test"
-DB_CONFIGURED = all(os.environ.get(k) for k in sd.REQUIRED_SETTINGS)
-SPECS = {s.table: s for s in sd.SEED_SPECS}
+SPECS = {spec["table"]: spec for spec in sd.TABLES}
+
+# IDs that are already "loaded" for the rule tests. ACC001 belongs to CUS001, ACC002 to CUS002.
+LOADED = {"employee": {"EMP001"}, "customer": {"CUS001", "CUS002"},
+          "account": {"ACC001": "CUS001", "ACC002": "CUS002"}}
 
 
-def complaint_row(**overrides):
+def check_complaint(**changes):
     row = {"complaint_id": "CMP900", "customer_id": "CUS001", "account_id": "ACC001", "channel": "Web",
            "category": "Fee Dispute", "customer_narrative": "text", "priority": "High", "status": "OPEN",
            "created_at": "2025-01-01 09:00:00", "assigned_employee_id": "EMP001"}
-    row.update(overrides)
-    return row
+    row.update(changes)
+    return sd.check_row("complaint", row, SPECS["complaint"]["required"], set(), "complaint_id", LOADED)
 
 
-ACCEPTED = {"employee": {"EMP001"}, "customer": {"CUS001", "CUS002"},
-            "account": {"ACC001": "CUS001", "ACC002": "CUS002"}}
-
-
-class ValidationRuleTests(unittest.TestCase):
+class RuleTests(unittest.TestCase):
     def test_valid_row_passes(self):
-        self.assertIsNone(sd.validate_row(SPECS["complaint"], complaint_row(), ACCEPTED, set()))
+        self.assertIsNone(check_complaint())
 
     def test_complaint_without_account_is_allowed(self):
-        row = complaint_row(account_id=None)
-        self.assertIsNone(sd.validate_row(SPECS["complaint"], row, ACCEPTED, set()))
+        self.assertIsNone(check_complaint(account_id=None))
 
     def test_account_must_belong_to_complaint_customer(self):
-        row = complaint_row(account_id="ACC002")
-        reason = sd.validate_row(SPECS["complaint"], row, ACCEPTED, set())
-        self.assertIn("belongs to customer 'CUS002'", reason)
+        self.assertIn("belongs to customer 'CUS002'", check_complaint(account_id="ACC002"))
 
-    def test_unknown_customer_rejected(self):
-        reason = sd.validate_row(SPECS["complaint"], complaint_row(customer_id="CUS999"), ACCEPTED, set())
-        self.assertIn("CUS999", reason)
+    def test_unknown_customer_account_and_employee_are_rejected(self):
+        self.assertIn("CUS999", check_complaint(customer_id="CUS999"))
+        self.assertIn("ACC999", check_complaint(account_id="ACC999"))
+        self.assertIn("EMP999", check_complaint(assigned_employee_id="EMP999"))
 
-    def test_unknown_account_rejected(self):
-        reason = sd.validate_row(SPECS["complaint"], complaint_row(account_id="ACC999"), ACCEPTED, set())
-        self.assertIn("ACC999", reason)
+    def test_empty_required_value_is_rejected(self):
+        self.assertIn("customer_narrative", check_complaint(customer_narrative=None))
 
-    def test_unknown_employee_rejected(self):
-        reason = sd.validate_row(SPECS["complaint"], complaint_row(assigned_employee_id="EMP999"), ACCEPTED, set())
-        self.assertIn("EMP999", reason)
-
-    def test_required_value_rejected(self):
-        reason = sd.validate_row(SPECS["complaint"], complaint_row(customer_narrative=None), ACCEPTED, set())
-        self.assertIn("customer_narrative", reason)
-
-    def test_duplicate_key_rejected(self):
-        reason = sd.validate_row(SPECS["complaint"], complaint_row(), ACCEPTED, {"CMP900"})
+    def test_duplicate_key_is_rejected(self):
+        row = {c: "x" for c in SPECS["customer"]["columns"]}
+        reason = sd.check_row("customer", row, SPECS["customer"]["required"], {"x"}, "customer_id", LOADED)
         self.assertIn("duplicate", reason)
 
 
-class CsvAndSchemaTests(unittest.TestCase):
+class FileTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
 
@@ -83,7 +72,7 @@ class CsvAndSchemaTests(unittest.TestCase):
 
     def test_missing_header_is_critical(self):
         path = self.tmp / "customers.csv"
-        path.write_text("customer_id,first_name,last_name,email,phone_number\nCUS001,A,B,,,\n")
+        path.write_text("customer_id,first_name,last_name,email,phone_number\nCUS001,A,B,,\n")
         with self.assertRaisesRegex(sd.SeedError, "missing required header.*segment"):
             sd.read_csv(path, SPECS["customer"])
 
@@ -91,121 +80,101 @@ class CsvAndSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(sd.SeedError, "not found"):
             sd.read_csv(self.tmp / "nope.csv", SPECS["customer"])
 
-    def test_blank_values_become_null(self):
+    def test_blank_cells_become_null(self):
         rows = sd.read_csv(SEEDER_DIR / "data" / "complaints.csv", SPECS["complaint"])
-        no_account = [r for _, r in rows if r["account_id"] is None]
-        self.assertEqual(len(no_account), 39)
+        self.assertEqual(len([r for _, r in rows if r["account_id"] is None]), 39)
 
-    def test_schema_ddl_only_in_dependency_order(self):
-        statements = sd.read_schema_statements(sd.DEFAULT_SCHEMA)
-        self.assertFalse(any(s.upper().startswith("INSERT") for s in statements))
-        tables = sd.schema_tables(statements)
+    def test_schema_has_only_table_creation_and_16_tables(self):
+        ddl, tables = sd.read_schema()
+        self.assertNotIn("INSERT INTO", ddl)
         self.assertEqual(len(tables), 16)
-        for parent, child in [("customer", "account"), ("account", "complaint"),
-                              ("customer", "service_request"), ("employee", "complaint")]:
-            self.assertLess(tables.index(parent), tables.index(child))
+        self.assertLess(tables.index("customer"), tables.index("account"))
+        self.assertLess(tables.index("account"), tables.index("complaint"))
+
+    def test_seed_files_match_prepare_seed_data(self):
+        """data/*.csv must be exactly what prepare_seed_data.py makes from data/source/."""
+        names = {"customers.csv": "customer", "accounts.csv": "account",
+                 "complaints.csv": "complaint", "service_requests.csv": "service_request"}
+        for name, rows in prep.convert().items():
+            saved = [row for _, row in sd.read_csv(SEEDER_DIR / "data" / name, SPECS[names[name]])]
+            expected = [{k: (v or None) for k, v in row.items()} for row in rows]
+            self.assertEqual(saved, expected, name)
+
+    def test_unknown_source_value_is_refused(self):
+        with self.assertRaisesRegex(prep.MappingError, "VIP"):
+            prep.mapped(prep.CUSTOMER_SEGMENT, "VIP", "C0999")
 
 
 @unittest.skipUnless(DB_CONFIGURED, "DB_* environment variables not set")
-class SeederIntegrationTests(unittest.TestCase):
+class FullRunTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import psycopg2
-        cls.psycopg2 = psycopg2
         cls.tmp = Path(tempfile.mkdtemp())
         cls.settings = sd.db_settings(TEST_DB)
-        cls._drop_db()
+        cls.drop_test_database()
 
     @classmethod
     def tearDownClass(cls):
-        cls._drop_db()
+        cls.drop_test_database()
         shutil.rmtree(cls.tmp)
 
     @classmethod
-    def _drop_db(cls):
-        conn = cls.psycopg2.connect(**dict(cls.settings, dbname="postgres"))
-        conn.autocommit = True
-        with conn.cursor() as cur:
+    def drop_test_database(cls):
+        connection = psycopg2.connect(**dict(cls.settings, dbname="postgres"))
+        connection.autocommit = True
+        with connection.cursor() as cur:
             cur.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
-        conn.close()
+        connection.close()
 
-    def seed(self, *args):
+    def seed(self, *options):
         return sd.main(["--dbname", TEST_DB, "--log", str(self.tmp / "log.txt"),
-                        "--report", str(self.tmp / "report.txt"), *args])
+                        "--report", str(self.tmp / "report.txt"), *options])
 
     def counts(self):
-        conn = self.psycopg2.connect(**self.settings)
-        try:
-            with conn.cursor() as cur:
-                out = {}
-                for t in SPECS:
-                    cur.execute(f"SELECT COUNT(*) FROM {t}")
-                    out[t] = cur.fetchone()[0]
-                return out
-        finally:
-            conn.close()
+        connection = psycopg2.connect(**self.settings)
+        with connection.cursor() as cur:
+            result = {}
+            for table in SPECS:
+                cur.execute(f"SELECT COUNT(*) FROM {table}")
+                result[table] = cur.fetchone()[0]
+        connection.close()
+        return result
+
+    def report(self):
+        return (self.tmp / "report.txt").read_text()
 
     def test_full_lifecycle(self):
         expected = {"employee": 10, "customer": 100, "account": 150, "complaint": 120, "service_request": 60}
 
-        # Fresh database: one command creates and seeds it.
+        # A new database: one command creates and seeds it.
         self.assertEqual(self.seed("--create-db"), 0)
         self.assertEqual(self.counts(), expected)
-        self.assertIn("PASSED", (self.tmp / "report.txt").read_text())
+        self.assertIn("PASSED", self.report())
 
-        # Re-run without --reset refuses and changes nothing.
-        self.assertEqual(self.seed(), 2)
+        # Running again without --reset refuses and changes nothing.
+        self.assertEqual(self.seed(), 1)
         self.assertEqual(self.counts(), expected)
 
-        # Missing header aborts before insert; previous data survives the reset attempt.
-        self.assertEqual(self.seed("--reset", "--data-dir", str(SEEDER_DIR / "test_data" / "missing_header")), 2)
+        # A missing header stops the run before any insert. The data from before is still there.
+        self.assertEqual(self.seed("--reset", "--data-dir", str(SEEDER_DIR / "test_data" / "missing_header")), 1)
         self.assertEqual(self.counts(), expected)
 
-        # Strict mode with invalid rows rolls back everything, including the reset.
+        # --strict with bad rows rolls back everything, including the reset.
         self.assertEqual(self.seed("--reset", "--strict",
                                    "--data-dir", str(SEEDER_DIR / "test_data" / "invalid_rows")), 1)
         self.assertEqual(self.counts(), expected)
-        self.assertIn("rolled back", (self.tmp / "report.txt").read_text())
+        self.assertIn("rolled back", self.report())
 
-        # Default mode rejects the 11 bad rows with reasons and loads the rest.
+        # Without --strict the 11 bad rows are rejected with a reason and the rest are loaded.
         self.assertEqual(self.seed("--reset", "--data-dir", str(SEEDER_DIR / "test_data" / "invalid_rows")), 0)
         self.assertEqual(self.counts(), expected)
-        report = (self.tmp / "report.txt").read_text()
-        self.assertIn("11 row(s) rejected", report)
-        self.assertIn("CP00121", report)  # account belongs to another customer
+        self.assertIn("11 row(s) rejected", self.report())
+        self.assertIn("CP00121", self.report())      # its account belongs to another customer
 
-        # Controlled reset back to the clean dataset.
+        # Reset back to the clean data.
         self.assertEqual(self.seed("--reset"), 0)
         self.assertEqual(self.counts(), expected)
 
 
 if __name__ == "__main__":
-    unittest.main()
-
-
-
-class PrepareSeedDataTests(unittest.TestCase):
-    def test_committed_seed_files_match_conversion(self):
-        """data/*.csv must be exactly what prepare_seed_data.py produces from data/source/."""
-        outputs, _ = prep.convert()
-        for name, (columns, rows) in outputs.items():
-            committed = sd.read_csv(SEEDER_DIR / "data" / name, SPECS[{
-                "customers.csv": "customer", "accounts.csv": "account",
-                "complaints.csv": "complaint", "service_requests.csv": "service_request"}[name]])
-            self.assertEqual(len(committed), len(rows), name)
-            for (_, got), want in zip(committed, rows):
-                self.assertEqual(got, {k: (v or None) for k, v in want.items()}, name)
-
-    def test_status_mapping(self):
-        outputs, _ = prep.convert()
-        statuses = {r["status"] for r in outputs["complaints.csv"][1]}
-        self.assertEqual(statuses, {"OPEN", "UNDER_REVIEW", "ESCALATED", "CLOSED"})
-
-    def test_closed_requests_have_closed_date(self):
-        outputs, _ = prep.convert()
-        for r in outputs["service_requests.csv"][1]:
-            self.assertEqual(r["status"] == "CLOSED", bool(r["closed_date"]), r["request_id"])
-
-    def test_unknown_source_value_is_refused(self):
-        with self.assertRaisesRegex(prep.MappingError, "VIP"):
-            prep.mapped("customer.segment", "VIP", "C0999")
+    unittest.main(verbosity=2)

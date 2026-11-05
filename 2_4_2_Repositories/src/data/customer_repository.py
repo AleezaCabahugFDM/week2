@@ -1,3 +1,5 @@
+"""Customer data access. All SQL uses %s placeholders, never values pasted into the text."""
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -17,6 +19,7 @@ class CustomerRepository:
         self.db = db
 
     def get_by_id(self, customer_id):
+        """Returns a Customer, or None if it does not exist."""
         with self.db.transaction() as cur:
             cur.execute(
                 "SELECT customer_id, first_name, last_name, email, phone_number, segment "
@@ -24,4 +27,6 @@ class CustomerRepository:
                 (customer_id,),
             )
             row = cur.fetchone()
-        return Customer(*row) if row else None
+        if row is None:
+            return None
+        return Customer(*row)

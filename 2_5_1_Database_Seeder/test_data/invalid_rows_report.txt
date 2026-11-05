@@ -1,6 +1,6 @@
 INTEGRITY REPORT - Exercise 2.5.1 Database Seeder
 ==============================================================================
-generated : 2026-11-04 14:59:58
+generated : 2026-11-05 09:15:14
 database  : postgres@localhost:5432/complaints_seed
 data dir  : test_data/invalid_rows
 mode      : reset=True strict=False
