@@ -77,23 +77,37 @@ LIMIT 10;
 
 
 -- CHECKS
--- Each check returns one number. The expected answer is in the comment.
+-- One table: each row is a check with the expected and actual answer.
+-- In Supabase, running the whole file shows this table.
+SELECT check_id, check_name, expected, actual,
+       CASE WHEN actual = expected THEN 'PASS' ELSE 'FAIL' END AS result
+FROM (
+    SELECT 'V01' AS check_id, 'Total complaints' AS check_name,
+           30 AS expected, COUNT(*) AS actual
+    FROM complaint
 
--- V01. Total complaints (expected 30)
-SELECT COUNT(*) FROM complaint;
+    UNION ALL
+    SELECT 'V02', 'Open complaints (Q1)', 29, COUNT(*)
+    FROM complaint WHERE status NOT IN ('RESOLVED', 'CLOSED')
 
--- V02. Open + closed = total (expected 29 + 1 = 30)
-SELECT COUNT(*) FROM complaint WHERE status NOT IN ('RESOLVED', 'CLOSED');
-SELECT COUNT(*) FROM complaint WHERE status IN ('RESOLVED', 'CLOSED');
+    UNION ALL
+    SELECT 'V03', 'High-priority unresolved complaints (Q2)', 12, COUNT(*)
+    FROM complaint WHERE priority IN ('High', 'Critical') AND status NOT IN ('RESOLVED', 'CLOSED')
 
--- V03. Complaints with no account are still found for CUS009 (expected 1)
-SELECT COUNT(*) FROM complaint WHERE customer_id = 'CUS009' AND account_id IS NULL;
+    UNION ALL
+    SELECT 'V04', 'CUS009 complaint with no account is still found (Q5)', 1, COUNT(*)
+    FROM complaint WHERE customer_id = 'CUS009' AND account_id IS NULL
 
--- V04. A customer that does not exist returns nothing (expected 0)
-SELECT COUNT(*) FROM complaint WHERE customer_id = 'CUS999';
+    UNION ALL
+    SELECT 'V05', 'A customer that does not exist returns nothing', 0, COUNT(*)
+    FROM complaint WHERE customer_id = 'CUS999'
 
--- V05. A complaint made late on the last day is included (expected 1, CMP030 at 13:15)
-SELECT COUNT(*) FROM complaint WHERE created_at >= '2025-02-24' AND created_at < '2025-02-25';
+    UNION ALL
+    SELECT 'V06', 'Complaint made at 13:15 on the last day is included (CMP030)', 1, COUNT(*)
+    FROM complaint WHERE created_at >= '2025-02-24' AND created_at < '2025-02-25'
 
--- V06. Values are case-sensitive: 'high' is not a priority (expected 0)
-SELECT COUNT(*) FROM complaint WHERE priority = 'high';
+    UNION ALL
+    SELECT 'V07', 'Values are case-sensitive: ''high'' is not a priority', 0, COUNT(*)
+    FROM complaint WHERE priority = 'high'
+) AS checks
+ORDER BY check_id;

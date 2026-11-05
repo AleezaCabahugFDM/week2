@@ -2,7 +2,7 @@
 
 Week 2 | Exercise 2.1.2 · Step 4
 
-These notes explain the choices in `basic_queries.sql`. The checks at the end of the file (V01–V06) all pass. Their results are in `basic_query_results.csv`.
+These notes explain the choices in `basic_queries.sql`. The checks at the end of the file (V01–V07) all pass. Their results are in `basic_query_results.csv`.
 
 ## Question → query map
 
@@ -29,7 +29,7 @@ A complaint is open while someone still has work to do on it. Using `status = 'O
 
 **High priority (Q2)** is `priority IN ('High', 'Critical')`. Critical is more urgent than High, so it is included. Q2 returns 3 Critical + 9 High = 12.
 
-Values are case-sensitive: `priority = 'high'` finds nothing (check V06).
+Values are case-sensitive: `priority = 'high'` finds nothing (check V07).
 
 ## 2. Date range (Q6)
 
@@ -40,7 +40,7 @@ WHERE created_at >= '2025-02-01'
 
 `created_at` has a time of day. `BETWEEN '2025-02-01' AND '2025-02-14'` would stop at midnight on the 14th and miss complaints made later that day. Writing "before the 15th" includes the whole of the 14th.
 
-Check V05 proves this: CMP030 was made on 2025-02-24 at 13:15 and is found by a one-day range for that date.
+Check V06 proves this: CMP030 was made on 2025-02-24 at 13:15 and is found by a one-day range for that date.
 
 ## 3. NULLs and missing values
 
@@ -55,7 +55,7 @@ WHERE status IN ('RESOLVED', 'CLOSED')
 
 The only closed complaint (CMP005) has its history row, so the result is 0, as expected.
 
-**Q5.** CMP029 (CUS009) has no account (`account_id` is NULL). Q5 only filters on `customer_id`, so it still returns all 3 of CUS009's complaints (check V03). A customer that does not exist returns 0 rows, not an error (check V04).
+**Q5.** CMP029 (CUS009) has no account (`account_id` is NULL). Q5 only filters on `customer_id`, so it still returns all 3 of CUS009's complaints (check V04). A customer that does not exist returns 0 rows, not an error (check V05).
 
 ## 4. Supplied values (Q5, Q6)
 
@@ -86,6 +86,6 @@ The customer ID and dates are typed straight into the query so it is easy to rea
 psql -d complaints -f basic_queries.sql
 ```
 
-In Supabase, paste the file into the SQL Editor, highlight one query and press **Run**.
+In Supabase, paste the file into the SQL Editor. Running the whole file shows only the last result, which is the check table. To see one question's answer, highlight that query and press **Run**.
 
 `basic_query_results.csv` has one row per check: `check_id`, `check_name`, `expected`, `actual`, `result` (PASS/FAIL).

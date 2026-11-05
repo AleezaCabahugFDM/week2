@@ -33,13 +33,18 @@ JOIN customer cu ON c.customer_id = cu.customer_id
 LEFT JOIN account a ON c.account_id = a.account_id;
 
 
--- CHECKS
+-- CHECKS (running the whole file shows this table)
+SELECT 'C01 view rows (expected 30)' AS check_name, COUNT(*) AS actual
+FROM complaint_analyst_view
 
--- C01. One row per complaint (expected 30 and 30)
-SELECT COUNT(*), COUNT(DISTINCT complaint_id) FROM complaint_analyst_view;
+UNION ALL
+SELECT 'C02 distinct complaints (expected 30)', COUNT(DISTINCT complaint_id)
+FROM complaint_analyst_view
 
--- C02. Complaints with no account are kept (expected 3)
-SELECT COUNT(*) FROM complaint_analyst_view WHERE account_id IS NULL;
+UNION ALL
+SELECT 'C03 complaints with no account (expected 3)', COUNT(*)
+FROM complaint_analyst_view WHERE account_id IS NULL
 
--- C03. Open complaints (expected 29)
-SELECT COUNT(*) FROM complaint_analyst_view WHERE is_open = true;
+UNION ALL
+SELECT 'C04 open complaints (expected 29)', COUNT(*)
+FROM complaint_analyst_view WHERE is_open = true;

@@ -90,31 +90,47 @@ ORDER BY complaint_position;
 
 
 -- CHECKS
--- Each check returns one number. The expected answer is in the comment.
+-- One table: each row is a check with the expected and actual answer.
+-- In Supabase, running the whole file shows this table.
+SELECT check_id, check_name, expected, actual,
+       CASE WHEN actual = expected THEN 'PASS' ELSE 'FAIL' END AS result
+FROM (
+    SELECT 'V01' AS check_id, 'Unresolved complaints (the buckets add up to this)' AS check_name,
+           29 AS expected, COUNT(*) AS actual
+    FROM complaint_analyst_view WHERE is_open = true
 
--- V01. Unresolved complaints, so the buckets should add up to this (expected 29)
-SELECT COUNT(*) FROM complaint_analyst_view WHERE is_open = true;
+    UNION ALL
+    SELECT 'V02', 'CMP023 is 7 days old (last day of 0-7)', 7,
+           DATE '2025-02-24' - CAST(created_at AS DATE)
+    FROM complaint_analyst_view WHERE complaint_id = 'CMP023'
 
--- V02. Edge of the first bucket: CMP023 is 7 days old (expected 7, so 0-7 days)
-SELECT DATE '2025-02-24' - CAST(created_at AS DATE) FROM complaint_analyst_view WHERE complaint_id = 'CMP023';
+    UNION ALL
+    SELECT 'V03', 'CMP022 is 8 days old (first day of 8-30)', 8,
+           DATE '2025-02-24' - CAST(created_at AS DATE)
+    FROM complaint_analyst_view WHERE complaint_id = 'CMP022'
 
--- V03. Start of the second bucket: CMP022 is 8 days old (expected 8, so 8-30 days)
-SELECT DATE '2025-02-24' - CAST(created_at AS DATE) FROM complaint_analyst_view WHERE complaint_id = 'CMP022';
+    UNION ALL
+    SELECT 'V04', 'CMP010 is 30 days old (last day of 8-30)', 30,
+           DATE '2025-02-24' - CAST(created_at AS DATE)
+    FROM complaint_analyst_view WHERE complaint_id = 'CMP010'
 
--- V04. Edge of the second bucket: CMP010 is 30 days old (expected 30, so 8-30 days)
-SELECT DATE '2025-02-24' - CAST(created_at AS DATE) FROM complaint_analyst_view WHERE complaint_id = 'CMP010';
+    UNION ALL
+    SELECT 'V05', 'CMP009 is 31 days old (first day of 31+)', 31,
+           DATE '2025-02-24' - CAST(created_at AS DATE)
+    FROM complaint_analyst_view WHERE complaint_id = 'CMP009'
 
--- V05. Start of the last bucket: CMP009 is 31 days old (expected 31, so 31+ days)
-SELECT DATE '2025-02-24' - CAST(created_at AS DATE) FROM complaint_analyst_view WHERE complaint_id = 'CMP009';
+    UNION ALL
+    SELECT 'V06', 'Customers who have complained (Q2 rows)', 10, COUNT(DISTINCT customer_id)
+    FROM complaint_analyst_view
 
--- V06. Customers who have complained (expected 10)
-SELECT COUNT(DISTINCT customer_id) FROM complaint_analyst_view;
+    UNION ALL
+    SELECT 'V07', 'Complaints with status history (Q3 rows)', 30, COUNT(DISTINCT complaint_id)
+    FROM complaint_status_history
 
--- V07. Complaints that have status history, so Q3 should return this many rows (expected 30)
-SELECT COUNT(DISTINCT complaint_id) FROM complaint_status_history;
-
--- V08. Customers tied for the most complaints (expected 3: CUS001, CUS003, CUS007)
-SELECT COUNT(*)
-FROM (SELECT customer_id FROM complaint_analyst_view
-      GROUP BY customer_id
-      HAVING COUNT(*) = 4) AS top_customers;
+    UNION ALL
+    SELECT 'V08', 'Customers tied for the most complaints (CUS001, CUS003, CUS007)', 3, COUNT(*)
+    FROM (SELECT customer_id FROM complaint_analyst_view
+          GROUP BY customer_id
+          HAVING COUNT(*) = 4) AS top_customers
+) AS checks
+ORDER BY check_id;

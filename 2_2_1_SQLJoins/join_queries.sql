@@ -36,23 +36,25 @@ ORDER BY c.complaint_id;
 
 -- J3. Check the complaint count before and after the joins.
 -- If the numbers change, a join lost or repeated complaints.
+-- Expected: 30, 30, 30 and then 27 for the wrong INNER JOIN.
+SELECT '1. complaint only' AS join_step, COUNT(*) AS row_count
+FROM complaint
 
--- Before any join (expected 30)
-SELECT COUNT(*) FROM complaint;
-
--- After joining customer (expected 30)
-SELECT COUNT(*)
-FROM complaint c
-JOIN customer cu ON c.customer_id = cu.customer_id;
-
--- After joining account with LEFT JOIN (expected 30 rows and 30 distinct complaints)
-SELECT COUNT(*), COUNT(DISTINCT c.complaint_id)
+UNION ALL
+SELECT '2. + JOIN customer', COUNT(*)
 FROM complaint c
 JOIN customer cu ON c.customer_id = cu.customer_id
-LEFT JOIN account a ON c.account_id = a.account_id;
 
--- WRONG: joining account with INNER JOIN loses the 3 no-account complaints (expected 27)
-SELECT COUNT(*)
+UNION ALL
+SELECT '3. + LEFT JOIN account (correct)', COUNT(*)
 FROM complaint c
 JOIN customer cu ON c.customer_id = cu.customer_id
-JOIN account a ON c.account_id = a.account_id;
+LEFT JOIN account a ON c.account_id = a.account_id
+
+UNION ALL
+SELECT '4. + JOIN account (wrong: loses 3)', COUNT(*)
+FROM complaint c
+JOIN customer cu ON c.customer_id = cu.customer_id
+JOIN account a ON c.account_id = a.account_id
+
+ORDER BY join_step;

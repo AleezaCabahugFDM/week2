@@ -1,9 +1,9 @@
 check_id,check_name,expected,actual,result
-V01,"Unresolved complaints, so the buckets should add up to this",29,29,PASS
-V02,Edge of the first bucket: CMP023 is 7 days old,7,7,PASS
-V03,Start of the second bucket: CMP022 is 8 days old,8,8,PASS
-V04,Edge of the second bucket: CMP010 is 30 days old,30,30,PASS
-V05,Start of the last bucket: CMP009 is 31 days old,31,31,PASS
-V06,Customers who have complained,10,10,PASS
-V07,"Complaints that have status history, so Q3 should return this many rows",30,30,PASS
-V08,Customers tied for the most complaints,3,3,PASS
+V01,Unresolved complaints (the buckets add up to this),29,29,PASS
+V02,CMP023 is 7 days old (last day of 0-7),7,7,PASS
+V03,CMP022 is 8 days old (first day of 8-30),8,8,PASS
+V04,CMP010 is 30 days old (last day of 8-30),30,30,PASS
+V05,CMP009 is 31 days old (first day of 31+),31,31,PASS
+V06,Customers who have complained (Q2 rows),10,10,PASS
+V07,Complaints with status history (Q3 rows),30,30,PASS
+V08,"Customers tied for the most complaints (CUS001, CUS003, CUS007)",3,3,PASS

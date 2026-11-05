@@ -19,18 +19,19 @@ Each complaint has one customer and at most one account, so the joins never repe
 |---|---|---|---|---|
 | 1 | `complaint` only | 30 | 30 | PASS |
 | 2 | + `JOIN customer` | 30 | 30 | PASS |
-| 3 | + `LEFT JOIN account` (rows, distinct complaints) | 30, 30 | 30, 30 | PASS |
+| 3 | + `LEFT JOIN account` | 30 | 30 | PASS |
 | 4 | + `JOIN account` instead (the wrong join) | 27 | 27 | PASS (shows the problem) |
 
-Steps 1–3 keep all 30 complaints, and rows = distinct complaints, so nothing is lost or repeated. Step 4 shows that an inner join to `account` silently drops the 3 complaints with no account.
+Steps 1–3 keep all 30 complaints, so nothing is lost or repeated. Step 4 shows that an inner join to `account` silently drops the 3 complaints with no account.
 
 ## complaint_analyst_view checks
 
 | Check | Expected | Actual | Result |
 |---|---|---|---|
-| C01 One row per complaint (rows, distinct IDs) | 30, 30 | 30, 30 | PASS |
-| C02 Complaints with no account are kept | 3 | 3 | PASS |
-| C03 Open complaints | 29 | 29 | PASS |
+| C01 View rows | 30 | 30 | PASS |
+| C02 Distinct complaints (no duplicates) | 30 | 30 | PASS |
+| C03 Complaints with no account are kept | 3 | 3 | PASS |
+| C04 Open complaints | 29 | 29 | PASS |
 
 The view leaves out customer names, email, phone, account number and balance.
 

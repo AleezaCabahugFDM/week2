@@ -84,6 +84,6 @@ WHERE c.complaint_id IN ('CMP023', 'CMP029', 'CMP030');
 | Analyst view keeps no-account complaints | 3 | 3 | PASS |
 | INNER JOIN loses them (negative test) | 0 | 0 | PASS |
 
-The same idea is checked in J3 of `join_queries.sql` (LEFT JOIN keeps 30, INNER JOIN drops to 27) and check C02 in `complaint_analyst_view.sql`.
+The same idea is checked in J3 of `join_queries.sql` (LEFT JOIN keeps 30, INNER JOIN drops to 27) and check C03 in `complaint_analyst_view.sql`.
 
 **To reproduce:** run the queries above in psql or the Supabase SQL Editor (run `complaint_analyst_view.sql` first for Test 2). In Supabase, NULLs show as empty cells or `NULL`.

@@ -1,7 +1,8 @@
 check_id,check_name,expected,actual,result
 V01,Total complaints,30,30,PASS
-V02,Open + closed = total,30,30,PASS
-V03,Complaints with no account are still found for CUS009,1,1,PASS
-V04,A customer that does not exist returns nothing,0,0,PASS
-V05,A complaint made late on the last day is included,1,1,PASS
-V06,Values are case-sensitive: 'high' is not a priority,0,0,PASS
+V02,Open complaints (Q1),29,29,PASS
+V03,High-priority unresolved complaints (Q2),12,12,PASS
+V04,CUS009 complaint with no account is still found (Q5),1,1,PASS
+V05,A customer that does not exist returns nothing,0,0,PASS
+V06,Complaint made at 13:15 on the last day is included (CMP030),1,1,PASS
+V07,Values are case-sensitive: 'high' is not a priority,0,0,PASS
