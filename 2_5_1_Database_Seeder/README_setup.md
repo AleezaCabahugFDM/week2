@@ -1,51 +1,54 @@
-# 2.5.1 Database Setup — One Command
+# 2.5.1 Database Setup: One Command
 
-Recreates the complaint training database from scratch: schema from 2.1.1, then validated seed data from CSV. No manual SQL editing.
+Week 2 | Exercise 2.5.1
+
+`seed_database.py` builds the complaint training database from nothing and loads the shared CSV data. You never have to write SQL by hand.
 
 ```bash
-python3 seed_database.py --create-db --reset
+python3 seed_database.py
 ```
 
 ## What's in this folder
 
-| File | Purpose |
+| File | What it is |
 |---|---|
-| `seed_database.py` | Initialization and seeding command |
-| `seed_run_log.txt` | Stage, count and error evidence (appended on every run) |
-| `integrity_report.txt` | Counts and orphan checks from the latest run (overwritten each run) |
-| `data/*.csv` | Seed-ready data: employees, customers, accounts, complaints, service requests |
-| `data/source/` | The project's synthetic data as supplied, saved as CSV. Edit these, not `data/*.csv` |
-| `data/reference/` | Scenario and question sets, converted to CSV. Not loaded into the database |
-| `prepare_seed_data.py` | Converts `data/source/` into `data/*.csv` (see "Where the seed data comes from") |
-| `test_data/invalid_rows/` | Same data plus 11 deliberately bad rows (negative test) |
-| `test_data/missing_header/` | `complaints.csv` without the `customer_id` header (negative test) |
-| `test_data/invalid_rows_report.txt` | Report from a run that rejected the 11 bad rows |
-| `test_data/invalid_rows_strict_report.txt` | Report from the same run in `--strict` mode (rolled back) |
-| `tests/test_seed_database.py` | Unit and integration tests |
+| `seed_database.py` | The setup command |
+| `seed_run_log.txt` | Every stage, count and error from each run. Each run is added to the end |
+| `integrity_report.txt` | Row counts and orphan checks from the latest successful run. Replaced each time |
+| `README_setup.md` | This guide |
+| `data/` | The 4 shared CSV files, exactly as supplied: `customers.csv`, `accounts.csv`, `complaints.csv`, `service_requests.csv` |
 
-The schema is read from `../2_1_1_schema/database_schema.sql`. Only its DDL block (the first `BEGIN … COMMIT`) is used; the seed `INSERT`s in that file are replaced by the CSV load here.
+The tables come from `../2_1_1_schema/database_schema.sql`. Only its table-creation part (the first `BEGIN … COMMIT`) is used. The CSV files replace its old sample rows.
 
 ## Prerequisites
 
-1. **PostgreSQL 14+** running and reachable. Check: `pg_isready -h localhost -p 5432`.
-2. **Python 3.9+** with `psycopg2-binary`:
+1. **PostgreSQL** running on your computer. Check it with:
+
+   ```bash
+   pg_isready -h localhost -p 5432
+   ```
+
+   You should see `accepting connections`.
+
+2. **Python 3.9+** with `psycopg2`, the library Python uses to talk to PostgreSQL. The repo's `.venv` already has it. Otherwise:
 
    ```bash
    python3 -m pip install psycopg2-binary
    ```
 
-   The repo's `.venv` already has it: use `../.venv/bin/python` instead of `python3`.
-3. **Connection settings** as environment variables, or in the untracked `.env` file at the repo root (picked up automatically; shell variables win):
+3. **A `.env` file** in the repo folder (one level up from this folder), with the names from `environment_example.txt`:
 
-   | Variable | Example |
-   |---|---|
-   | `DB_HOST` | `localhost` |
-   | `DB_PORT` | `5432` |
-   | `DB_NAME` | `complaints_training` |
-   | `DB_USER` | `postgres` |
-   | `DB_PASSWORD` | your password |
+   ```
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USER=postgres
+   DB_PASSWORD=your_password
+   ```
 
-   The user needs permission to create tables, and to create databases if you use `--create-db`. The password is never written to the log or report.
+   - The user needs permission to create databases and tables.
+   - The script reads `.env` itself. Settings already in your terminal win.
+   - The password is never printed or written to the log or report, and `.gitignore` keeps `.env` off GitHub.
+   - `DB_NAME` is not used: the seeder always fills its own database, **`complaints_seed`**. That way `--reset` can never wipe `complaints_training`, which 2.4.2 uses.
 
 ## Run it
 
@@ -55,146 +58,128 @@ From this folder:
 cd 2_5_1_Database_Seeder
 ```
 
+**First time** (the database or tables don't exist yet):
+
 ```bash
-python3 seed_database.py --create-db --reset
+../.venv/bin/python seed_database.py
 ```
 
-| Option | Effect |
-|---|---|
-| `--create-db` | Create the database named by `DB_NAME` if it does not exist |
-| `--reset` | Drop and recreate the 16 schema tables if they already exist. **Deletes their data.** Without it, the command refuses to touch an existing schema |
-| `--strict` | Roll back the whole run if any row is rejected |
-| `--dbname NAME` | Use a different database than `DB_NAME` (e.g. a scratch copy) |
-| `--data-dir DIR` | Load CSVs from another folder (default `data/`) |
-| `--log FILE`, `--report FILE` | Write the log or report somewhere else |
+**Rebuild from scratch** (deletes the existing tables and their data, then loads again):
 
-Exit codes: `0` success (committed), `1` failure (nothing saved). The log says why: a missing header or file, existing tables without `--reset`, no connection, an integrity failure, or a rejected row under `--strict`.
+```bash
+../.venv/bin/python seed_database.py --reset
+```
+
+If you've installed `psycopg2` yourself, use `python3` instead of `../.venv/bin/python`.
+
+## What it does
+
+| Step | What happens |
+|---|---|
+| 1. Initialize | Creates the `complaints_seed` database if it's missing, then the 16 tables from 2.1.1 in dependency order. If the tables already exist, it **stops** unless you add `--reset`. |
+| 2. Validate | Checks all 4 files exist and have the required headers *before* inserting anything. |
+| 3. Load | Checks every row, then loads customers → accounts → complaints → service requests (parents first). A bad row is **rejected with a reason** and the rest carry on. A row whose customer, account or complaint was rejected is rejected too. |
+| 4. Verify | Compares file counts with the database, and runs 7 orphan and consistency checks. |
+| 5. Save or undo | Everything above is **one transaction**. If a critical check fails, it's all undone and the database is left exactly as it was. Otherwise it's saved. |
+
+**Critical** (stops the run and undoes everything): a missing setting, a missing file, a missing header, a database error, a count mismatch, or a failed orphan check.
+
+**A rejected row** (recorded, and the run carries on) is any row that breaks one of the rules below.
+
+## Rules each row is checked against
+
+From `seed_validation_rules.md`, plus the 2.1.1 table rules:
+
+- Required values aren't empty, and IDs aren't repeated.
+- Every link points at something that was loaded:
+  - an account's customer
+  - a complaint's customer and account
+  - a service request's customer and complaint
+- **A complaint's account, when there is one, belongs to that complaint's customer.** The same goes for a service request's complaint.
+- Values are ones the tables allow, translated from the shared files' wording:
+
+  | File value | Table value |
+  |---|---|
+  | Segment `Standard` / `Premium` / `Small Business` | `Retail` / `Premier` / `Business` |
+  | Account status `Active` / `Restricted` | `ACTIVE` / `RESTRICTED` |
+  | Complaint status `Open` / `In Review` / `Escalated` / `Closed` | `OPEN` / `UNDER_REVIEW` / `ESCALATED` / `CLOSED` |
+  | Request status `Open` / `In Progress` / `Completed` | `OPEN` / `IN_PROGRESS` / `CLOSED` |
+  | Dates like `4/28/2026` | `2026-04-28` |
+
+  A value not in this list is rejected, never guessed.
+- Priority is `Low`, `Medium`, `High` or `Critical`, and balances are numbers.
 
 ## Expected output
 
-On the shipped data the console ends with:
+The last lines on screen should be:
 
 ```
-STAGE load: employee         source=10  inserted=10  rejected=0
-STAGE load: customer         source=100 inserted=100 rejected=0
-STAGE load: account          source=150 inserted=150 rejected=0
-STAGE load: complaint        source=120 inserted=120 rejected=0
-STAGE load: service_request  source=60  inserted=60  rejected=0
-STAGE verify: account -> customer                                  PASS
-...
-COMMIT: PASSED - committed
+STAGE load: customer source=100 inserted=100 rejected=0
+STAGE load: account source=150 inserted=150 rejected=0
+STAGE load: complaint source=120 inserted=120 rejected=0
+STAGE load: service_request source=60 inserted=60 rejected=0
+STAGE verify: ... PASS          (7 checks)
+COMMIT: PASSED - saved
 RUN END: success
 ```
 
-`integrity_report.txt` shows `result : PASSED - committed`, every count row `PASS`, every orphan check `0  PASS`, 39 complaints with no `account_id` and 18 service requests with no `account_id`. Those are valid general complaints, not orphans.
+`integrity_report.txt` then shows:
 
-Only the 5 seeded tables get rows. The other 11 tables (transactions, fee, investigation, review, …) are created empty.
+| Table | File | Inserted | Rejected | In database |
+|---|---:|---:|---:|---:|
+| customer | 100 | 100 | 0 | 100 |
+| account | 150 | 150 | 0 | 150 |
+| complaint | 120 | 120 | 0 | 120 |
+| service_request | 60 | 60 | 0 | 60 |
 
-## Where the seed data comes from
+All 7 orphan checks find 0 rows. 39 complaints and 18 service requests have no account, which is allowed.
 
-The project's synthetic data (customers, accounts, complaints, service requests) is kept as supplied in `data/source/`. The Excel accounts sheet was saved as CSV, with balances rounded to cents to remove Excel float noise such as `10256.459999999999`. Everything else is unchanged.
+## Stand-in values (known limitations)
 
-That data doesn't match the 2.1.1 schema's column names and allowed values. Rather than change the schema (the 2.1.1 contract), `prepare_seed_data.py` maps the data onto it. After editing anything in `data/source/`, regenerate the seed files:
+The 2.1.1 tables require some values the shared files don't have. To keep the 2.1.1 design unchanged, the seeder fills them with clearly labelled stand-ins. They're also listed at the end of every `integrity_report.txt`.
 
-```bash
-python3 prepare_seed_data.py
-```
-
-The script stops without writing anything if it meets a source value it has no mapping for.
-
-| Table | Change | Why |
+| Column | Stand-in | Why |
 |---|---|---|
-| customer | segment `Standard` → `Retail`, `Premium` → `Premier`, `Small Business` → `Business` | Schema only allows Retail / Premier / Business |
-| customer | `risk_category` dropped; `phone_number` empty | No such column / not in source |
-| account | `current_balance` → `balance`; status `Active` → `ACTIVE`, `Restricted` → `RESTRICTED` | Schema column name and upper-case statuses |
-| account | `account_number` generated: `A00042` → `100000042` | Required and unique, not in source |
-| account | `open_date` set to `2025-01-01` for every account (**placeholder**) | Required, not in source. Chosen to fall before the earliest complaint |
-| complaint | status `In Review` → `UNDER_REVIEW`, `Escalated` → `ESCALATED`, `Open` → `OPEN`, `Closed` → `CLOSED` | Schema status list |
-| complaint | `date_opened` → `created_at` (midnight) | Schema column name and type |
-| complaint | `customer_narrative` = "[Placeholder] *category* complaint received by *channel*…" | Required, and the source has no complaint text |
-| complaint | `date_closed` dropped; `assigned_employee_id` empty | No such column / not in source |
-| service_request | status `Completed` → `CLOSED`, `In Progress` → `IN_PROGRESS`, `Open` → `OPEN` | Schema status list |
-| service_request | `closed_date` = `created_date` for CLOSED requests (**placeholder**) | Schema requires a closed date when CLOSED; the source has none |
-| service_request | `complaint_id` dropped; `account_id` taken from the linked complaint | No `complaint_id` column. The account keeps the request's account context |
-| employee | Kept from the 2.1.1 seed (10 staff) | The source set has no staff file |
+| `account.account_number` | The `account_id`, e.g. `A00042` | The file has no account numbers |
+| `account.open_date` | `2026-01-01` for every account | The file has no open dates. This is before the earliest complaint (2026-01-02) |
+| `complaint.customer_narrative` | `[No complaint text in source data]` | The file has no complaint text |
+| `complaint.created_at` | `date_opened` at 00:00 | The file has dates but no times |
+| `service_request.closed_date` | Same as `created_date` for `Completed` requests | The table needs a closed date for closed requests, and the file has none |
+| `service_request.account_id` | The account of the linked complaint | The file links a request to a complaint, not an account |
 
-Not loaded. These are converted to CSV in `data/reference/` for later exercises:
-- `banking_complaint_scenarios.csv`: 20 classification test cases with expected category and urgency. Keeping them out of the database stops a later classifier or agent from looking up the answers.
-- `sql_rag_question_set.csv`: 5 evaluation questions for the SQL/RAG work.
+**Not loaded:**
+- `customers.risk_category` and `complaints.date_closed`. The 2.1.1 tables have no column for them, so resolution times **can't** be worked out from the seeded database. 2.4.1 calculates them from the CSV instead.
+- No employees, policies, investigations or other tables. The shared files only cover customers, accounts, complaints and service requests, so those tables are created but left empty.
 
-Data-quality issue reported, not fixed: 37 of the 60 service requests are dated before the complaint they belong to. The dates are kept as given. The link to the complaint isn't stored in the schema, so it doesn't break any database rule.
+**Other limitations:**
+- Mapping `Standard` → `Retail` and `Small Business` → `Business` is my reading of the two sets of names. It isn't defined anywhere in the source files.
+- The whole load is one transaction. That's fine at this size, but a very large file would hold the transaction open for a long time.
 
-## How it works
+## Failure tests
 
-The whole run is **one transaction**. PostgreSQL DDL is transactional, so the reset, table creation and inserts either all commit or all roll back. A failed run leaves the database exactly as it was before you ran the command.
+These were run on 2026-11-05. Their output is in `seed_run_log.txt`. The test files aren't kept in the repo. To repeat a test, copy `data/` to a new folder, make the change, and run with `--data <folder>`.
 
-1. **Initialize**: run the 2.1.1 DDL, which creates the tables in dependency order (employee → customer → account → complaint → …). The log lists the 16 tables created. Existing tables are only dropped with `--reset`.
-2. **Validate**: read every CSV first. A missing file or missing required header is critical and stops the run before any insert.
-3. **Load** in FK order. Each row is checked against the rules in `seed_validation_rules.md`, and an invalid row is rejected with a logged reason:
-   - required values present, no duplicate key in the file
-   - every foreign key resolves to a row that was actually *inserted*, so a child of a rejected parent is rejected too
-   - when a complaint or service request has an account, that account must belong to the same customer
-   - any remaining database constraint (segment, priority, date order, …) rejects that row only, using a savepoint
-4. **Verify**: compare source rows = inserted + rejected = rows in the database, then run 8 orphan and consistency checks. Any failure rolls the run back.
+| Test | How | Result |
+|---|---|---|
+| Bad rows | Added 15 bad rows to a copy of `data/`: a duplicate ID, an empty first name, segment `Gold`, an unknown customer (on an account and on a complaint), status `Frozen`, balance `abc`, an account of a rejected customer, another customer's account, priority `Urgent`, date `2026-13-45`, an unknown account, an unknown complaint, a complaint of another customer, status `Done` | All 15 rejected with the right reason. The 430 good rows loaded. **PASS** |
+| Missing header | Removed `customer_id` from the `complaints.csv` header | Stopped with `CRITICAL: complaints.csv is missing required header(s): customer_id`. The tables it had already rebuilt were undone, so the database still had its 100 customers. **PASS** |
+| Missing file | Left out `service_requests.csv` | Stopped with `CRITICAL: service_requests.csv not found`. Nothing saved. **PASS** |
+| No `--reset` | Ran again on a database that already had the tables | Stopped with `the tables already exist, so nothing was changed`. **PASS** |
+| Fresh setup | Deleted the `complaints_seed` database, then ran `seed_database.py` | Created the database and tables, and loaded all 430 rows. **PASS** |
 
-## Verify it yourself
-
-Run the tests. They use a throwaway database, `complaints_seed_test`, which is created and dropped:
-
-```bash
-../.venv/bin/python -m unittest discover -s tests -v
-```
-
-Try the negative cases against a scratch database:
-
-```bash
-python3 seed_database.py --dbname complaints_seed --create-db --reset --data-dir test_data/invalid_rows
-```
-
-```bash
-python3 seed_database.py --dbname complaints_seed --reset --strict --data-dir test_data/invalid_rows
-```
-
-```bash
-python3 seed_database.py --dbname complaints_seed --reset --data-dir test_data/missing_header
-```
-
-Expected results: 11 rows rejected and the rest committed; then the same run rolled back with exit 1; then a missing `customer_id` header, also exit 1. After the last two, the database still holds what the first run committed.
-
-Check counts directly:
-
-```bash
-psql -h localhost -U postgres -d complaints_seed -c "SELECT 'complaint', COUNT(*) FROM complaint UNION ALL SELECT 'account', COUNT(*) FROM account"
-```
+The 2.4.2 repositories also work on the seeded database. For example, `CustomerRepository.get_by_id("C0015")` returns a customer with complaint `CP00001`.
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
+| Message | What to do |
 |---|---|
-| `Missing environment variable(s): DB_...` | Set the variables, or create `.env` at the repo root |
-| `Cannot connect to localhost:5432/...` | PostgreSQL isn't running, or host, port or password is wrong. Check with `pg_isready` |
-| `database "..." does not exist` | Add `--create-db` |
-| `16 schema table(s) already exist ... Re-run with --reset` | Safety stop. Add `--reset` only if you mean to wipe those tables |
-| `permission denied to create database` | Create the database as an admin, or use a user with `CREATEDB` |
-| `missing required header(s): ...` | Fix the CSV's first line. Headers must match the column names in the table above the CSV files |
-| `REJECT ... line N` warnings | That row broke a rule and was skipped. The reason is in the log and the report. Use `--strict` to make any rejection fatal |
-| `ModuleNotFoundError: psycopg2` | `python3 -m pip install psycopg2-binary`, or use `../.venv/bin/python` |
+| `missing setting(s): DB_HOST, ...` | Create or fix `.env` in the repo folder (see Prerequisites) |
+| `connection ... failed: Connection refused` | PostgreSQL isn't running. Start it, then check with `pg_isready` |
+| `password authentication failed` | Check `DB_USER` and `DB_PASSWORD` in `.env` |
+| `permission denied to create database` | Use a user that can create databases, or ask an admin to create `complaints_seed` for you |
+| `the tables already exist, so nothing was changed` | Add `--reset` to rebuild (this deletes the current data) |
+| `... is missing required header(s): ...` or `... not found` | A data file was changed or removed. Restore `data/` from git: `git checkout -- data` |
+| `REJECT ... line N ...` | That row broke a rule. Fix it in `data/`, or leave it: the rest still loads |
+| `ModuleNotFoundError: No module named 'psycopg2'` | Use `../.venv/bin/python`, or install `psycopg2-binary` |
 
-## Known limitations
-
-- `--reset` uses `DROP TABLE … CASCADE` from the 2.1.1 schema. It also drops dependent views created by other exercises, such as `complaint_analyst_view` from 2.2.1. Re-run those scripts afterwards.
-- Only employees, customers, accounts, complaints and service requests come from CSV. The other tables are created empty. No complaint is assigned to an employee.
-- **Some source information is not stored**, because the 2.1.1 schema has no column for it: complaint `date_closed`, customer `risk_category`, and the service request → complaint link. So questions like "average closure time by category" can't be answered from this database yet. Storing them needs a schema change plus an update to the 2.1.1 data dictionary.
-- Complaint narratives, account open dates and service request closed dates are **placeholders**, as listed in the table above. Don't treat them as real values in analysis.
-- The IDs differ from the 2.1.1 seed (`C0001`, not `CUS001`). Queries and tests from earlier exercises that use the old IDs, including the 2.4.2 integration tests, need updating before they run against a database built by this command.
-- Rows created later by the 2.4.2 API (e.g. new complaints) are lost on `--reset`. They are not in the CSVs.
-- The CSVs are loaded in full into memory. That's fine for training-sized data, not for millions of rows.
-- The run log is appended and never rotated. Delete `seed_run_log.txt` to start fresh.
-
-## Handover
-
-Exercise 2.5.2 deletes and recreates the environment using only this command and this guide:
-
-```bash
-python3 seed_database.py --create-db --reset
-```
+**Handover:** 2.5.2 deletes and rebuilds the environment using only this command and this guide. The connection and validation pattern matches 2.4.2.

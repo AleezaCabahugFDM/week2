@@ -1,36 +1,44 @@
 INTEGRITY REPORT - Exercise 2.5.1 Database Seeder
-==============================================================================
-generated : 2026-11-05 09:15:14
+========================================================================
+generated : 2026-11-05 16:39:52
 database  : postgres@localhost:5432/complaints_seed
-data dir  : /Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/data
-mode      : reset=True strict=False
-result    : PASSED - committed
+data      : data
+reset     : False
+result    : PASSED - saved
 
-ROW COUNTS (source vs inserted vs database)
-------------------------------------------------------------------------------
-table               source  inserted  rejected   in_db  result
-employee                10        10         0      10  PASS
-customer               100       100         0     100  PASS
-account                150       150         0     150  PASS
-complaint              120       120         0     120  PASS
-service_request         60        60         0      60  PASS
+ROW COUNTS (file vs inserted vs database)
+------------------------------------------------------------------------
+table              file  inserted  rejected  in_db  result
+customer            100       100         0    100  PASS
+account             150       150         0    150  PASS
+complaint           120       120         0    120  PASS
+service_request      60        60         0     60  PASS
 
-ORPHAN / CONSISTENCY CHECKS (expected 0 rows each)
-------------------------------------------------------------------------------
-account -> customer                                       0  PASS
-complaint -> customer                                     0  PASS
-complaint -> account (when present)                       0  PASS
-complaint account belongs to complaint customer           0  PASS
-complaint -> assigned employee (when present)             0  PASS
-service_request -> customer                               0  PASS
-service_request -> account (when present)                 0  PASS
-service_request account belongs to request customer       0  PASS
+ORPHAN AND CONSISTENCY CHECKS (each should find 0 rows)
+------------------------------------------------------------------------
+account -> customer                                         0  PASS
+complaint -> customer                                       0  PASS
+complaint -> account (when there is one)                    0  PASS
+complaint account belongs to the complaint customer         0  PASS
+service_request -> customer                                 0  PASS
+service_request -> account (when there is one)              0  PASS
+service_request account belongs to the request customer     0  PASS
 
-OPTIONAL ACCOUNT LINKS (valid by design, not orphans)
-------------------------------------------------------------------------------
-complaints with no account_id (general / identity / fraud): 39
-service requests with no account_id:                        18
+OPTIONAL ACCOUNT LINKS (allowed, not orphans)
+------------------------------------------------------------------------
+complaints with no account:        39
+service requests with no account:  18
 
 REJECTED ROWS
-------------------------------------------------------------------------------
+------------------------------------------------------------------------
 none
+
+STAND-IN VALUES (the shared files don't have these, see README_setup.md)
+------------------------------------------------------------------------
+account.account_number = the account_id (the file has no account numbers)
+account.open_date = 2026-01-01 for every account (the file has no open dates)
+complaint.customer_narrative = '[No complaint text in source data]' (the file has no complaint text)
+complaint.created_at = date_opened at 00:00 (the file has dates, not times)
+service_request.closed_date = created_date for Completed requests (the file has no closed date)
+service_request.account_id = the account of the linked complaint (the file links to a complaint, not an account)
+Not loaded: customers.risk_category and complaints.date_closed (the 2.1.1 tables have no column for them)

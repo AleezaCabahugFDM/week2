@@ -1,142 +1,110 @@
-09:15:13 ======================================================================
-09:15:13 RUN START  db=postgres@localhost:5432/complaints_seed  reset=True strict=False  data=/Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/data
-09:15:13 STAGE connect: database 'complaints_seed' already exists
-09:15:13 STAGE connect: connected, starting one transaction
-09:15:13 STAGE init: --reset given, dropping and recreating 16 existing table(s)
-09:15:13 STAGE init: created 16 tables: employee, customer, account, complaint, complaint_status_history, transactions, fee, service_request, policy_document, policy_section, investigation, recommendation, review_request, review_decision, customer_response, audit_log
-09:15:13 STAGE validate: employees.csv        headers OK, 10 data row(s)
-09:15:13 STAGE validate: customers.csv        headers OK, 100 data row(s)
-09:15:13 STAGE validate: accounts.csv         headers OK, 150 data row(s)
-09:15:13 STAGE validate: complaints.csv       headers OK, 120 data row(s)
-09:15:13 STAGE validate: service_requests.csv headers OK, 60 data row(s)
-09:15:13 STAGE load: employee         source=10  inserted=10  rejected=0
-09:15:13 STAGE load: customer         source=100 inserted=100 rejected=0
-09:15:13 STAGE load: account          source=150 inserted=150 rejected=0
-09:15:13 STAGE load: complaint        source=120 inserted=120 rejected=0
-09:15:13 STAGE load: service_request  source=60  inserted=60  rejected=0
-09:15:13 STAGE verify: account -> customer                                  PASS
-09:15:13 STAGE verify: complaint -> customer                                PASS
-09:15:13 STAGE verify: complaint -> account (when present)                  PASS
-09:15:13 STAGE verify: complaint account belongs to complaint customer      PASS
-09:15:13 STAGE verify: complaint -> assigned employee (when present)        PASS
-09:15:13 STAGE verify: service_request -> customer                          PASS
-09:15:13 STAGE verify: service_request -> account (when present)            PASS
-09:15:13 STAGE verify: service_request account belongs to request customer  PASS
-09:15:13 COMMIT: PASSED - committed
-09:15:13 Report written to /Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/integrity_report.txt
-09:15:13 RUN END: success
-09:15:13 ======================================================================
-09:15:13 RUN START  db=postgres@localhost:5432/complaints_seed  reset=False strict=False  data=/Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/data
-09:15:13 STAGE connect: connected, starting one transaction
-09:15:13 CRITICAL: 16 schema table(s) already exist. Nothing was changed. Re-run with --reset to drop and recreate them (this deletes their data).
-09:15:13 RUN END: failed, no changes saved
-09:15:14 ======================================================================
-09:15:14 RUN START  db=postgres@localhost:5432/complaints_seed  reset=True strict=False  data=test_data/missing_header
-09:15:14 STAGE connect: connected, starting one transaction
-09:15:14 STAGE init: --reset given, dropping and recreating 16 existing table(s)
-09:15:14 STAGE init: created 16 tables: employee, customer, account, complaint, complaint_status_history, transactions, fee, service_request, policy_document, policy_section, investigation, recommendation, review_request, review_decision, customer_response, audit_log
-09:15:14 STAGE validate: employees.csv        headers OK, 10 data row(s)
-09:15:14 STAGE validate: customers.csv        headers OK, 100 data row(s)
-09:15:14 STAGE validate: accounts.csv         headers OK, 150 data row(s)
-09:15:14 CRITICAL: complaint: complaints.csv is missing required header(s): customer_id
-09:15:14 RUN END: failed, no changes saved
-09:15:14 ======================================================================
-09:15:14 RUN START  db=postgres@localhost:5432/complaints_seed  reset=True strict=True  data=test_data/invalid_rows
-09:15:14 STAGE connect: connected, starting one transaction
-09:15:14 STAGE init: --reset given, dropping and recreating 16 existing table(s)
-09:15:14 STAGE init: created 16 tables: employee, customer, account, complaint, complaint_status_history, transactions, fee, service_request, policy_document, policy_section, investigation, recommendation, review_request, review_decision, customer_response, audit_log
-09:15:14 STAGE validate: employees.csv        headers OK, 10 data row(s)
-09:15:14 STAGE validate: customers.csv        headers OK, 102 data row(s)
-09:15:14 STAGE validate: accounts.csv         headers OK, 152 data row(s)
-09:15:14 STAGE validate: complaints.csv       headers OK, 125 data row(s)
-09:15:14 STAGE validate: service_requests.csv headers OK, 62 data row(s)
-09:15:14 STAGE load: employee         source=10  inserted=10  rejected=0
-09:15:14 REJECT customers.csv line 102 (C0101): database rejected row: new row for relation "customer" violates check constraint "chk_customer_segment"
-09:15:14 REJECT customers.csv line 103 (C0001): duplicate customer_id 'C0001' in source file
-09:15:14 STAGE load: customer         source=102 inserted=100 rejected=2
-09:15:14 REJECT accounts.csv line 152 (A00151): customer_id 'C9999' does not exist in customer
-09:15:14 REJECT accounts.csv line 153 (A00152): customer_id 'C0101' does not exist in customer
-09:15:14 STAGE load: account          source=152 inserted=150 rejected=2
-09:15:14 REJECT complaints.csv line 122 (CP00121): account_id 'A00002' belongs to customer 'C0059', not to customer 'C0001'
-09:15:14 REJECT complaints.csv line 123 (CP00122): customer_id 'C9999' does not exist in customer
-09:15:14 REJECT complaints.csv line 124 (CP00123): customer_id 'C0101' does not exist in customer
-09:15:14 REJECT complaints.csv line 125 (CP00124): required value 'customer_narrative' is empty
-09:15:14 REJECT complaints.csv line 126 (CP00125): assigned_employee_id 'EMP999' does not exist in employee
-09:15:14 STAGE load: complaint        source=125 inserted=120 rejected=5
-09:15:14 REJECT service_requests.csv line 62 (SR00061): account_id 'A00002' belongs to customer 'C0059', not to customer 'C0001'
-09:15:14 REJECT service_requests.csv line 63 (SR00062): database rejected row: new row for relation "service_request" violates check constraint "chk_service_request_dates"
-09:15:14 STAGE load: service_request  source=62  inserted=60  rejected=2
-09:15:14 STAGE verify: account -> customer                                  PASS
-09:15:14 STAGE verify: complaint -> customer                                PASS
-09:15:14 STAGE verify: complaint -> account (when present)                  PASS
-09:15:14 STAGE verify: complaint account belongs to complaint customer      PASS
-09:15:14 STAGE verify: complaint -> assigned employee (when present)        PASS
-09:15:14 STAGE verify: service_request -> customer                          PASS
-09:15:14 STAGE verify: service_request -> account (when present)            PASS
-09:15:14 STAGE verify: service_request account belongs to request customer  PASS
-09:15:14 CRITICAL: --strict: 11 row(s) rejected
-09:15:14 ROLLBACK: FAILED - transaction rolled back, database unchanged
-09:15:14 RUN END: failed, no changes saved
-09:15:14 ======================================================================
-09:15:14 RUN START  db=postgres@localhost:5432/complaints_seed  reset=True strict=False  data=test_data/invalid_rows
-09:15:14 STAGE connect: connected, starting one transaction
-09:15:14 STAGE init: --reset given, dropping and recreating 16 existing table(s)
-09:15:14 STAGE init: created 16 tables: employee, customer, account, complaint, complaint_status_history, transactions, fee, service_request, policy_document, policy_section, investigation, recommendation, review_request, review_decision, customer_response, audit_log
-09:15:14 STAGE validate: employees.csv        headers OK, 10 data row(s)
-09:15:14 STAGE validate: customers.csv        headers OK, 102 data row(s)
-09:15:14 STAGE validate: accounts.csv         headers OK, 152 data row(s)
-09:15:14 STAGE validate: complaints.csv       headers OK, 125 data row(s)
-09:15:14 STAGE validate: service_requests.csv headers OK, 62 data row(s)
-09:15:14 STAGE load: employee         source=10  inserted=10  rejected=0
-09:15:14 REJECT customers.csv line 102 (C0101): database rejected row: new row for relation "customer" violates check constraint "chk_customer_segment"
-09:15:14 REJECT customers.csv line 103 (C0001): duplicate customer_id 'C0001' in source file
-09:15:14 STAGE load: customer         source=102 inserted=100 rejected=2
-09:15:14 REJECT accounts.csv line 152 (A00151): customer_id 'C9999' does not exist in customer
-09:15:14 REJECT accounts.csv line 153 (A00152): customer_id 'C0101' does not exist in customer
-09:15:14 STAGE load: account          source=152 inserted=150 rejected=2
-09:15:14 REJECT complaints.csv line 122 (CP00121): account_id 'A00002' belongs to customer 'C0059', not to customer 'C0001'
-09:15:14 REJECT complaints.csv line 123 (CP00122): customer_id 'C9999' does not exist in customer
-09:15:14 REJECT complaints.csv line 124 (CP00123): customer_id 'C0101' does not exist in customer
-09:15:14 REJECT complaints.csv line 125 (CP00124): required value 'customer_narrative' is empty
-09:15:14 REJECT complaints.csv line 126 (CP00125): assigned_employee_id 'EMP999' does not exist in employee
-09:15:14 STAGE load: complaint        source=125 inserted=120 rejected=5
-09:15:14 REJECT service_requests.csv line 62 (SR00061): account_id 'A00002' belongs to customer 'C0059', not to customer 'C0001'
-09:15:14 REJECT service_requests.csv line 63 (SR00062): database rejected row: new row for relation "service_request" violates check constraint "chk_service_request_dates"
-09:15:14 STAGE load: service_request  source=62  inserted=60  rejected=2
-09:15:14 STAGE verify: account -> customer                                  PASS
-09:15:14 STAGE verify: complaint -> customer                                PASS
-09:15:14 STAGE verify: complaint -> account (when present)                  PASS
-09:15:14 STAGE verify: complaint account belongs to complaint customer      PASS
-09:15:14 STAGE verify: complaint -> assigned employee (when present)        PASS
-09:15:14 STAGE verify: service_request -> customer                          PASS
-09:15:14 STAGE verify: service_request -> account (when present)            PASS
-09:15:14 STAGE verify: service_request account belongs to request customer  PASS
-09:15:14 COMMIT: PASSED - committed (11 row(s) rejected, see below)
-09:15:14 Report written to test_data/invalid_rows_report.txt
-09:15:14 RUN END: success
-09:15:14 ======================================================================
-09:15:14 RUN START  db=postgres@localhost:5432/complaints_seed  reset=True strict=False  data=/Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/data
-09:15:14 STAGE connect: connected, starting one transaction
-09:15:14 STAGE init: --reset given, dropping and recreating 16 existing table(s)
-09:15:14 STAGE init: created 16 tables: employee, customer, account, complaint, complaint_status_history, transactions, fee, service_request, policy_document, policy_section, investigation, recommendation, review_request, review_decision, customer_response, audit_log
-09:15:14 STAGE validate: employees.csv        headers OK, 10 data row(s)
-09:15:14 STAGE validate: customers.csv        headers OK, 100 data row(s)
-09:15:14 STAGE validate: accounts.csv         headers OK, 150 data row(s)
-09:15:14 STAGE validate: complaints.csv       headers OK, 120 data row(s)
-09:15:14 STAGE validate: service_requests.csv headers OK, 60 data row(s)
-09:15:14 STAGE load: employee         source=10  inserted=10  rejected=0
-09:15:14 STAGE load: customer         source=100 inserted=100 rejected=0
-09:15:14 STAGE load: account          source=150 inserted=150 rejected=0
-09:15:14 STAGE load: complaint        source=120 inserted=120 rejected=0
-09:15:14 STAGE load: service_request  source=60  inserted=60  rejected=0
-09:15:14 STAGE verify: account -> customer                                  PASS
-09:15:14 STAGE verify: complaint -> customer                                PASS
-09:15:14 STAGE verify: complaint -> account (when present)                  PASS
-09:15:14 STAGE verify: complaint account belongs to complaint customer      PASS
-09:15:14 STAGE verify: complaint -> assigned employee (when present)        PASS
-09:15:14 STAGE verify: service_request -> customer                          PASS
-09:15:14 STAGE verify: service_request -> account (when present)            PASS
-09:15:14 STAGE verify: service_request account belongs to request customer  PASS
-09:15:14 COMMIT: PASSED - committed
-09:15:14 Report written to /Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/integrity_report.txt
-09:15:14 RUN END: success
+2026-11-05 16:39:20 RUN START: database=complaints_seed on localhost:5432 reset=True data=test_bad_rows
+2026-11-05 16:39:20 STAGE init: database complaints_seed already exists
+2026-11-05 16:39:20 STAGE init: connected, everything below is one transaction
+2026-11-05 16:39:20 STAGE init: --reset given, deleting and rebuilding the existing tables
+2026-11-05 16:39:20 STAGE init: created 16 tables from 2_1_1_schema/database_schema.sql
+2026-11-05 16:39:20 STAGE validate: customers.csv headers OK, 103 rows
+2026-11-05 16:39:20 STAGE validate: accounts.csv headers OK, 154 rows
+2026-11-05 16:39:20 STAGE validate: complaints.csv headers OK, 125 rows
+2026-11-05 16:39:20 STAGE validate: service_requests.csv headers OK, 63 rows
+2026-11-05 16:39:20 REJECT customers.csv line 102 (C0001): duplicate customer_id
+2026-11-05 16:39:20 REJECT customers.csv line 103 (C0901): required value 'first_name' is empty
+2026-11-05 16:39:20 REJECT customers.csv line 104 (C0902): unknown segment 'Gold'
+2026-11-05 16:39:20 STAGE load: customer source=103 inserted=100 rejected=3
+2026-11-05 16:39:20 REJECT accounts.csv line 152 (A09001): customer_id 'C9999' does not exist
+2026-11-05 16:39:20 REJECT accounts.csv line 153 (A09002): unknown status 'Frozen'
+2026-11-05 16:39:20 REJECT accounts.csv line 154 (A09003): balance 'abc' is not a number
+2026-11-05 16:39:20 REJECT accounts.csv line 155 (A09004): customer_id 'C0902' does not exist
+2026-11-05 16:39:20 STAGE load: account source=154 inserted=150 rejected=4
+2026-11-05 16:39:20 REJECT complaints.csv line 122 (CP09001): customer_id 'C9999' does not exist
+2026-11-05 16:39:20 REJECT complaints.csv line 123 (CP09002): account_id 'A00001' belongs to customer 'C0089', not 'C0001'
+2026-11-05 16:39:20 REJECT complaints.csv line 124 (CP09003): unknown priority 'Urgent'
+2026-11-05 16:39:20 REJECT complaints.csv line 125 (CP09004): date_opened '2026-13-45' is not a M/D/YYYY date
+2026-11-05 16:39:20 REJECT complaints.csv line 126 (CP09005): account_id 'A99999' does not exist
+2026-11-05 16:39:20 STAGE load: complaint source=125 inserted=120 rejected=5
+2026-11-05 16:39:20 REJECT service_requests.csv line 62 (SR09001): complaint_id 'CP99999' does not exist
+2026-11-05 16:39:20 REJECT service_requests.csv line 63 (SR09002): complaint_id 'CP00001' belongs to another customer
+2026-11-05 16:39:20 REJECT service_requests.csv line 64 (SR09003): unknown status 'Done'
+2026-11-05 16:39:20 STAGE load: service_request source=63 inserted=60 rejected=3
+2026-11-05 16:39:20 STAGE verify: account -> customer PASS
+2026-11-05 16:39:20 STAGE verify: complaint -> customer PASS
+2026-11-05 16:39:20 STAGE verify: complaint -> account (when there is one) PASS
+2026-11-05 16:39:20 STAGE verify: complaint account belongs to the complaint customer PASS
+2026-11-05 16:39:20 STAGE verify: service_request -> customer PASS
+2026-11-05 16:39:20 STAGE verify: service_request -> account (when there is one) PASS
+2026-11-05 16:39:20 STAGE verify: service_request account belongs to the request customer PASS
+2026-11-05 16:39:20 COMMIT: PASSED - saved (15 row(s) rejected, see below)
+2026-11-05 16:39:20 Report written to integrity_report.txt
+2026-11-05 16:39:20 RUN END: success
+2026-11-05 16:39:33 RUN START: database=complaints_seed on localhost:5432 reset=True data=test_missing_header
+2026-11-05 16:39:33 STAGE init: database complaints_seed already exists
+2026-11-05 16:39:33 STAGE init: connected, everything below is one transaction
+2026-11-05 16:39:33 STAGE init: --reset given, deleting and rebuilding the existing tables
+2026-11-05 16:39:33 STAGE init: created 16 tables from 2_1_1_schema/database_schema.sql
+2026-11-05 16:39:33 STAGE validate: customers.csv headers OK, 100 rows
+2026-11-05 16:39:33 STAGE validate: accounts.csv headers OK, 150 rows
+2026-11-05 16:39:33 ROLLBACK: nothing was saved
+2026-11-05 16:39:33 CRITICAL: complaints.csv is missing required header(s): customer_id
+2026-11-05 16:39:33 RUN END: failed, no changes saved
+2026-11-05 16:39:33 RUN START: database=complaints_seed on localhost:5432 reset=True data=test_missing_file
+2026-11-05 16:39:33 STAGE init: database complaints_seed already exists
+2026-11-05 16:39:33 STAGE init: connected, everything below is one transaction
+2026-11-05 16:39:33 STAGE init: --reset given, deleting and rebuilding the existing tables
+2026-11-05 16:39:33 STAGE init: created 16 tables from 2_1_1_schema/database_schema.sql
+2026-11-05 16:39:33 STAGE validate: customers.csv headers OK, 100 rows
+2026-11-05 16:39:33 STAGE validate: accounts.csv headers OK, 150 rows
+2026-11-05 16:39:33 STAGE validate: complaints.csv headers OK, 120 rows
+2026-11-05 16:39:33 ROLLBACK: nothing was saved
+2026-11-05 16:39:33 CRITICAL: service_requests.csv not found in /Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/test_missing_file
+2026-11-05 16:39:33 RUN END: failed, no changes saved
+2026-11-05 16:39:33 RUN START: database=complaints_seed on localhost:5432 reset=True data=data
+2026-11-05 16:39:33 STAGE init: database complaints_seed already exists
+2026-11-05 16:39:33 STAGE init: connected, everything below is one transaction
+2026-11-05 16:39:33 STAGE init: --reset given, deleting and rebuilding the existing tables
+2026-11-05 16:39:34 STAGE init: created 16 tables from 2_1_1_schema/database_schema.sql
+2026-11-05 16:39:34 STAGE validate: customers.csv headers OK, 100 rows
+2026-11-05 16:39:34 STAGE validate: accounts.csv headers OK, 150 rows
+2026-11-05 16:39:34 STAGE validate: complaints.csv headers OK, 120 rows
+2026-11-05 16:39:34 STAGE validate: service_requests.csv headers OK, 60 rows
+2026-11-05 16:39:34 STAGE load: customer source=100 inserted=100 rejected=0
+2026-11-05 16:39:34 STAGE load: account source=150 inserted=150 rejected=0
+2026-11-05 16:39:34 STAGE load: complaint source=120 inserted=120 rejected=0
+2026-11-05 16:39:34 STAGE load: service_request source=60 inserted=60 rejected=0
+2026-11-05 16:39:34 STAGE verify: account -> customer PASS
+2026-11-05 16:39:34 STAGE verify: complaint -> customer PASS
+2026-11-05 16:39:34 STAGE verify: complaint -> account (when there is one) PASS
+2026-11-05 16:39:34 STAGE verify: complaint account belongs to the complaint customer PASS
+2026-11-05 16:39:34 STAGE verify: service_request -> customer PASS
+2026-11-05 16:39:34 STAGE verify: service_request -> account (when there is one) PASS
+2026-11-05 16:39:34 STAGE verify: service_request account belongs to the request customer PASS
+2026-11-05 16:39:34 COMMIT: PASSED - saved
+2026-11-05 16:39:34 Report written to integrity_report.txt
+2026-11-05 16:39:34 RUN END: success
+2026-11-05 16:39:34 RUN START: database=complaints_seed on localhost:5432 reset=False data=data
+2026-11-05 16:39:34 STAGE init: database complaints_seed already exists
+2026-11-05 16:39:34 STAGE init: connected, everything below is one transaction
+2026-11-05 16:39:34 ROLLBACK: nothing was saved
+2026-11-05 16:39:34 CRITICAL: the tables already exist, so nothing was changed. Run again with --reset to delete and rebuild them.
+2026-11-05 16:39:34 RUN END: failed, no changes saved
+2026-11-05 16:39:51 RUN START: database=complaints_seed on localhost:5432 reset=False data=data
+2026-11-05 16:39:51 STAGE init: created database complaints_seed
+2026-11-05 16:39:51 STAGE init: connected, everything below is one transaction
+2026-11-05 16:39:51 STAGE init: created 16 tables from 2_1_1_schema/database_schema.sql
+2026-11-05 16:39:51 STAGE validate: customers.csv headers OK, 100 rows
+2026-11-05 16:39:51 STAGE validate: accounts.csv headers OK, 150 rows
+2026-11-05 16:39:51 STAGE validate: complaints.csv headers OK, 120 rows
+2026-11-05 16:39:51 STAGE validate: service_requests.csv headers OK, 60 rows
+2026-11-05 16:39:51 STAGE load: customer source=100 inserted=100 rejected=0
+2026-11-05 16:39:51 STAGE load: account source=150 inserted=150 rejected=0
+2026-11-05 16:39:51 STAGE load: complaint source=120 inserted=120 rejected=0
+2026-11-05 16:39:52 STAGE load: service_request source=60 inserted=60 rejected=0
+2026-11-05 16:39:52 STAGE verify: account -> customer PASS
+2026-11-05 16:39:52 STAGE verify: complaint -> customer PASS
+2026-11-05 16:39:52 STAGE verify: complaint -> account (when there is one) PASS
+2026-11-05 16:39:52 STAGE verify: complaint account belongs to the complaint customer PASS
+2026-11-05 16:39:52 STAGE verify: service_request -> customer PASS
+2026-11-05 16:39:52 STAGE verify: service_request -> account (when there is one) PASS
+2026-11-05 16:39:52 STAGE verify: service_request account belongs to the request customer PASS
+2026-11-05 16:39:52 COMMIT: PASSED - saved
+2026-11-05 16:39:52 Report written to integrity_report.txt
+2026-11-05 16:39:52 RUN END: success

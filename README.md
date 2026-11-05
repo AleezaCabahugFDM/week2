@@ -222,24 +222,44 @@ set -a; source ../.env; set +a
 | `seed_database.py` | The command: builds the tables, checks the CSVs, loads them, then checks the result |
 | `seed_run_log.txt` | Every stage, count and error from each run |
 | `integrity_report.txt` | Row counts (file vs database) and orphan checks |
-| `README_setup.md` | Prerequisites, the one command, expected output and troubleshooting |
+| `README_setup.md` | Prerequisites, the one command, expected output, stand-ins, failure tests and troubleshooting |
+| `data/` | The 4 shared CSV files, exactly as supplied |
+
+**How to run:**
+
+```bash
+cd 2_5_1_Database_Seeder
+../.venv/bin/python seed_database.py            # first time
+../.venv/bin/python seed_database.py --reset    # rebuild (deletes the current data)
+```
 
 **What it does:**
-1. Builds the 2.1.1 tables. It only wipes existing tables if you add `--reset`.
-2. Checks every CSV has the right headers, then loads customers, accounts, complaints and service requests. Any row with a broken link is rejected with a reason.
-3. If anything critical fails, **everything is undone**, so the database is never half-loaded.
-4. Compares counts and checks for orphan rows.
+1. Creates its own database, `complaints_seed`, so `--reset` can never wipe the `complaints_training` database 2.4.2 uses. Then it builds the 16 tables from 2.1.1. It stops if the tables already exist, unless you add `--reset`.
+2. Checks all 4 files and their headers before inserting anything.
+3. Checks every row, then loads customers, accounts, complaints and service requests, parents first. Bad rows are rejected with a reason, for example an unknown customer, or an account that belongs to a different customer.
+4. Compares counts and runs 7 orphan checks.
+5. It's all one transaction: if anything critical fails, **everything is undone**.
 
-**Result:** a test run into a throwaway database loaded 100 customers, 150 accounts, 120 complaints and 60 service requests, with nothing rejected and all 8 orphan checks passing. 13 of 13 tests pass.
+**The data mismatch:** the shared CSVs don't fully fit the 2.1.1 tables. I kept the 2.1.1 design unchanged:
+- **Translated** values that are just worded differently: `Active` → `ACTIVE`, `In Review` → `UNDER_REVIEW`, `4/28/2026` → `2026-04-28`.
+- **Filled** missing required values with **clearly labelled stand-ins**: account number = account ID, one open date, `[No complaint text in source data]`. Every stand-in is listed in `README_setup.md` and at the end of `integrity_report.txt`.
 
-**Still to do:**
-- **The data doesn't fit the tables.** The shared CSVs don't fully match the 2.1.1 tables. For example, they have no account numbers, no account open dates and no complaint text, and some values are worded differently (`Active` vs `ACTIVE`). Right now stand-in values fill those gaps.
-- **The plan:**
-  - Keep the 2.1.1 design and translate the obvious values.
-  - Label and document every stand-in.
-  - Remove the files that aren't deliverables.
-  - Simplify the code.
-  - Seed into a separate database so the `--reset` option can't wipe the one 2.4.2 uses.
+**Results:**
+
+| Run | Outcome |
+|---|---|
+| Real data | 100 customers, 150 accounts, 120 complaints and 60 service requests loaded. 0 rejected, all 7 orphan checks pass |
+| 15 bad rows | All rejected with the right reason |
+| Missing header | Everything undone |
+| Missing file | Stopped, nothing saved |
+| No `--reset` on an existing database | Stopped, nothing changed |
+| Fresh setup | Works |
+
+The 2.4.2 repositories also read the seeded data correctly.
+
+**What I changed:**
+- Simplified `seed_database.py` to beginner style.
+- Removed the files that aren't deliverables: a second copy of the data, unused reference files, `employees.csv`, `prepare_seed_data.py`, `tests/` and `test_data/`.
 
 **Handover:** 2.5.2 deletes and rebuilds the environment using only this utility and its README.
 

@@ -1,84 +1,69 @@
-"""Database initialization and seeding utility - Week 2, Exercise 2.5.1.
+# seed_database.py
+# Week 2 | Exercise 2.5.1 - Build the database and load the shared CSV data.
+#
+# How to run (from this folder):
+#   python3 seed_database.py            first time, or when the tables don't exist yet
+#   python3 seed_database.py --reset    rebuild: DELETES the existing tables and their data
+#
+# Steps:
+#   1. Initialize  create the 2.1.1 tables (only replaces existing tables with --reset)
+#   2. Validate    check the 4 CSV files and their headers, then check every row
+#                  and load the good ones. Bad rows are rejected with a reason.
+#   3. Verify      compare counts and look for orphan rows, then write integrity_report.txt
+#
+# Everything is one transaction. If anything critical fails, it is all undone
+# and the database is left exactly as it was.
 
-One command recreates the complaint training database:
-
-    python3 seed_database.py --create-db --reset
-
-What it does, in this order:
-  1. Initialize  create the tables from 2_1_1_schema/database_schema.sql
-                 (existing tables are only dropped when you add --reset)
-  2. Validate    check every CSV file has the required headers
-  3. Load        insert employees, customers, accounts, complaints and service requests.
-                 Rows that break a rule are rejected with a reason.
-  4. Verify      compare counts and look for orphan rows, then write integrity_report.txt
-
-Everything happens in ONE transaction. If something critical fails, the whole
-run is rolled back and the database is left exactly as it was.
-"""
-
-import argparse
 import csv
 import os
-import re
 import sys
 from datetime import datetime
-from pathlib import Path
 
 import psycopg2
 from psycopg2 import sql
 
-HERE = Path(__file__).parent
-REPO_ROOT = HERE.parent
-SCHEMA_FILE = REPO_ROOT / "2_1_1_schema" / "database_schema.sql"
-REQUIRED_SETTINGS = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+HERE = os.path.dirname(os.path.abspath(__file__))
+SCHEMA_FILE = os.path.join(HERE, "..", "2_1_1_schema", "database_schema.sql")
+ENV_FILE = os.path.join(HERE, "..", ".env")
+LOG_FILE = os.path.join(HERE, "seed_run_log.txt")
+REPORT_FILE = os.path.join(HERE, "integrity_report.txt")
 
-# The tables to load, in foreign-key order: parents before children.
-TABLES = [
-    {"table": "employee", "file": "employees.csv", "key": "employee_id",
-     "columns": ["employee_id", "first_name", "last_name", "email", "role"],
-     "required": ["employee_id", "first_name", "last_name", "email", "role"]},
-    {"table": "customer", "file": "customers.csv", "key": "customer_id",
-     "columns": ["customer_id", "first_name", "last_name", "email", "phone_number", "segment"],
-     "required": ["customer_id", "first_name", "last_name", "segment"]},
-    {"table": "account", "file": "accounts.csv", "key": "account_id",
-     "columns": ["account_id", "customer_id", "account_number", "account_type", "status", "balance", "open_date"],
-     "required": ["account_id", "customer_id", "account_number", "account_type", "status", "balance", "open_date"]},
-    {"table": "complaint", "file": "complaints.csv", "key": "complaint_id",
-     "columns": ["complaint_id", "customer_id", "account_id", "channel", "category", "customer_narrative",
-                 "priority", "status", "created_at", "assigned_employee_id"],
-     "required": ["complaint_id", "customer_id", "channel", "category", "customer_narrative",
-                  "priority", "status", "created_at"]},
-    {"table": "service_request", "file": "service_requests.csv", "key": "request_id",
-     "columns": ["request_id", "customer_id", "account_id", "request_type", "status", "created_date", "closed_date"],
-     "required": ["request_id", "customer_id", "request_type", "status", "created_date"]},
-]
+# The seeder fills its own database, so --reset can never wipe
+# complaints_training (the database 2.4.2 uses).
+DATABASE_NAME = "complaints_seed"
 
-# Each check should find 0 rows. Any row found is an orphan or a broken link.
-ORPHAN_CHECKS = [
-    ("account -> customer",
-     "SELECT a.account_id FROM account a LEFT JOIN customer c ON a.customer_id = c.customer_id "
-     "WHERE c.customer_id IS NULL"),
-    ("complaint -> customer",
-     "SELECT x.complaint_id FROM complaint x LEFT JOIN customer c ON x.customer_id = c.customer_id "
-     "WHERE c.customer_id IS NULL"),
-    ("complaint -> account (when present)",
-     "SELECT x.complaint_id FROM complaint x LEFT JOIN account a ON x.account_id = a.account_id "
-     "WHERE x.account_id IS NOT NULL AND a.account_id IS NULL"),
-    ("complaint account belongs to complaint customer",
-     "SELECT x.complaint_id FROM complaint x JOIN account a ON x.account_id = a.account_id "
-     "WHERE a.customer_id <> x.customer_id"),
-    ("complaint -> assigned employee (when present)",
-     "SELECT x.complaint_id FROM complaint x LEFT JOIN employee e ON x.assigned_employee_id = e.employee_id "
-     "WHERE x.assigned_employee_id IS NOT NULL AND e.employee_id IS NULL"),
-    ("service_request -> customer",
-     "SELECT s.request_id FROM service_request s LEFT JOIN customer c ON s.customer_id = c.customer_id "
-     "WHERE c.customer_id IS NULL"),
-    ("service_request -> account (when present)",
-     "SELECT s.request_id FROM service_request s LEFT JOIN account a ON s.account_id = a.account_id "
-     "WHERE s.account_id IS NOT NULL AND a.account_id IS NULL"),
-    ("service_request account belongs to request customer",
-     "SELECT s.request_id FROM service_request s JOIN account a ON s.account_id = a.account_id "
-     "WHERE a.customer_id <> s.customer_id"),
+# The columns each shared file must have.
+REQUIRED_HEADERS = {
+    "customers.csv": ["customer_id", "first_name", "last_name", "segment", "email"],
+    "accounts.csv": ["account_id", "customer_id", "account_type", "status", "current_balance"],
+    "complaints.csv": ["complaint_id", "customer_id", "account_id", "category", "status",
+                       "date_opened", "channel", "priority"],
+    "service_requests.csv": ["request_id", "complaint_id", "customer_id", "request_type",
+                             "status", "created_date"],
+}
+
+# The shared files word some values differently from the 2.1.1 tables.
+# source value -> table value. A value not listed here is rejected, never guessed.
+CUSTOMER_SEGMENT = {"Standard": "Retail", "Premium": "Premier", "Small Business": "Business"}
+ACCOUNT_STATUS = {"Active": "ACTIVE", "Inactive": "INACTIVE", "Closed": "CLOSED", "Restricted": "RESTRICTED"}
+COMPLAINT_STATUS = {"Open": "OPEN", "In Progress": "IN_PROGRESS", "In Review": "UNDER_REVIEW",
+                    "Escalated": "ESCALATED", "Resolved": "RESOLVED", "Closed": "CLOSED"}
+REQUEST_STATUS = {"Open": "OPEN", "In Progress": "IN_PROGRESS", "Completed": "CLOSED"}
+PRIORITIES = ["Low", "Medium", "High", "Critical"]
+
+# Stand-ins: the 2.1.1 tables need these values, but the shared files don't have them.
+# Each one is listed in integrity_report.txt and README_setup.md.
+ACCOUNT_OPEN_DATE = "2026-01-01"           # before the earliest complaint (2026-01-02)
+NO_COMPLAINT_TEXT = "[No complaint text in source data]"
+
+STAND_INS = [
+    "account.account_number = the account_id (the file has no account numbers)",
+    "account.open_date = " + ACCOUNT_OPEN_DATE + " for every account (the file has no open dates)",
+    "complaint.customer_narrative = '" + NO_COMPLAINT_TEXT + "' (the file has no complaint text)",
+    "complaint.created_at = date_opened at 00:00 (the file has dates, not times)",
+    "service_request.closed_date = created_date for Completed requests (the file has no closed date)",
+    "service_request.account_id = the account of the linked complaint (the file links to a complaint, not an account)",
+    "Not loaded: customers.risk_category and complaints.date_closed (the 2.1.1 tables have no column for them)",
 ]
 
 
@@ -86,329 +71,497 @@ class SeedError(Exception):
     """A critical problem. The run stops and nothing is saved."""
 
 
-# ---------- Logging: print to the screen and add to the log file ----------
-
-LOG_FILE = HERE / "seed_run_log.txt"
-
+# ----- Small helpers -----
 
 def log(message):
-    line = f"{datetime.now():%H:%M:%S} {message}"
+    """Print a line and add it to seed_run_log.txt."""
+    line = datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " " + message
     print(line)
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(line + "\n")
+    log_file = open(LOG_FILE, "a", encoding="utf-8")
+    log_file.write(line + "\n")
+    log_file.close()
 
 
-# ---------- Settings ----------
-
-def load_dotenv(path):
-    """Read KEY=value lines from a .env file. Variables already set in the shell win."""
-    if not path.is_file():
+def read_env_file():
+    """Read NAME=value lines from the .env file. Settings already in the terminal win."""
+    if not os.path.isfile(ENV_FILE):
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    env_file = open(ENV_FILE, encoding="utf-8")
+    for line in env_file:
         line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            name, value = line.split("=", 1)
-            os.environ.setdefault(name.strip(), value.strip().strip('"').strip("'"))
+        if line == "" or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        value = value.strip().strip('"').strip("'")      # allow DB_PASSWORD="secret" or 'secret'
+        if name.strip() not in os.environ:
+            os.environ[name.strip()] = value
+    env_file.close()
 
 
-def db_settings(dbname=None):
-    missing = [name for name in REQUIRED_SETTINGS if not os.environ.get(name)]
-    if dbname:
-        missing = [name for name in missing if name != "DB_NAME"]
-    if missing:
-        raise SeedError(f"Missing environment variable(s): {', '.join(missing)}")
+def get_settings():
+    missing = []
+    for name in ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD"]:
+        if not os.environ.get(name):
+            missing.append(name)
+    if len(missing) > 0:
+        # Name the missing settings, but never show any values.
+        raise SeedError("missing setting(s): " + ", ".join(missing) + " (put them in the .env file)")
     return {
         "host": os.environ["DB_HOST"],
         "port": int(os.environ["DB_PORT"]),
-        "dbname": dbname or os.environ["DB_NAME"],
         "user": os.environ["DB_USER"],
-        "password": os.environ["DB_PASSWORD"],
+        "password": os.environ["DB_PASSWORD"],     # never printed or logged
     }
 
 
+def read_date(text):
+    """Shared files use dates like 4/28/2026. Gives back a date, or None if it isn't one."""
+    try:
+        return datetime.strptime(text, "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def is_number(text):
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
+# ----- Step 1: initialize -----
+
 def create_database_if_missing(settings):
-    connection = psycopg2.connect(**dict(settings, dbname="postgres"), connect_timeout=5)
-    connection.autocommit = True     # CREATE DATABASE cannot run inside a transaction
-    with connection.cursor() as cur:
-        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (settings["dbname"],))
-        if cur.fetchone():
-            log(f"STAGE connect: database '{settings['dbname']}' already exists")
-        else:
-            cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(settings["dbname"])))
-            log(f"STAGE connect: created database '{settings['dbname']}'")
+    connection = psycopg2.connect(dbname="postgres", connect_timeout=5, **settings)
+    connection.autocommit = True        # CREATE DATABASE can't run inside a transaction
+    cursor = connection.cursor()
+    cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DATABASE_NAME,))
+    if cursor.fetchone() is None:
+        # sql.Identifier quotes the name safely (a name can't use a %s placeholder)
+        cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DATABASE_NAME)))
+        log("STAGE init: created database " + DATABASE_NAME)
+    else:
+        log("STAGE init: database " + DATABASE_NAME + " already exists")
+    cursor.close()
     connection.close()
 
 
-# ---------- Stage 1: initialize ----------
+def initialize(cursor, reset):
+    # Safety stop: never replace existing tables unless --reset was given.
+    cursor.execute("SELECT COUNT(*) FROM information_schema.tables "
+                   "WHERE table_schema = 'public' AND table_name = 'customer'")
+    tables_exist = cursor.fetchone()[0] > 0
+    if tables_exist and not reset:
+        raise SeedError("the tables already exist, so nothing was changed. "
+                        "Run again with --reset to delete and rebuild them.")
+    if tables_exist:
+        log("STAGE init: --reset given, deleting and rebuilding the existing tables")
 
-def read_schema(schema_file=SCHEMA_FILE):
-    """Return the table-creation part of database_schema.sql (the first BEGIN ... COMMIT block).
+    if not os.path.isfile(SCHEMA_FILE):
+        raise SeedError("schema file not found: " + SCHEMA_FILE)
+    schema_file = open(SCHEMA_FILE, encoding="utf-8")
+    schema = schema_file.read()
+    schema_file.close()
 
-    The INSERTs after it are the old 2.1.1 sample data, which the CSV files replace.
-    """
-    if not schema_file.is_file():
-        raise SeedError(f"Schema file not found: {schema_file}")
-    text = schema_file.read_text(encoding="utf-8")
-    ddl = text.split("\nCOMMIT;")[0].replace("BEGIN;", "", 1)
-    tables = re.findall(r"CREATE TABLE (\w+)", ddl)
-    if not tables:
-        raise SeedError(f"No CREATE TABLE statements found in {schema_file}")
-    return ddl, tables
-
-
-def initialize(cur, reset):
-    ddl, tables = read_schema()
-    cur.execute("SELECT COUNT(*) FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ANY(%s)", (tables,))
-    existing = cur.fetchone()[0]
-
-    # Safety stop: never wipe existing tables unless --reset was given.
-    if existing and not reset:
-        raise SeedError(f"{existing} schema table(s) already exist. Nothing was changed. "
-                        "Re-run with --reset to drop and recreate them (this deletes their data).")
-    if existing:
-        log(f"STAGE init: --reset given, dropping and recreating {existing} existing table(s)")
-
-    cur.execute(ddl)     # the schema file drops (IF EXISTS) and creates every table in dependency order
-    log(f"STAGE init: created {len(tables)} tables: {', '.join(tables)}")
+    # database_schema.sql has two parts: the tables (first BEGIN ... COMMIT), then the old
+    # 2.1.1 sample rows. Only the tables are used. The shared CSV files replace the sample rows.
+    tables_part = schema.split("COMMIT;")[0].replace("BEGIN;", "", 1)
+    cursor.execute(tables_part)        # drops (if they exist) and creates the tables in dependency order
+    log("STAGE init: created " + str(tables_part.count("CREATE TABLE")) + " tables from 2_1_1_schema/database_schema.sql")
 
 
-# ---------- Stage 2: validate headers ----------
+# ----- Step 2: validate and load -----
 
-def read_csv(path, spec):
-    """Read one seed file. A missing file or missing header is critical.
+def read_csv(folder, file_name):
+    """Read one shared file. A missing file or a missing header is critical."""
+    path = os.path.join(folder, file_name)
+    if not os.path.isfile(path):
+        raise SeedError(file_name + " not found in " + folder)
+    csv_file = open(path, newline="", encoding="utf-8-sig")
+    reader = csv.DictReader(csv_file)
+    headers = []
+    for header in reader.fieldnames or []:
+        headers.append(header.strip())
+    reader.fieldnames = headers
 
-    Returns a list of (line_number, row). Empty cells become None (NULL in the database).
-    """
-    if not path.is_file():
-        raise SeedError(f"{spec['table']}: source file not found: {path}")
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        headers = [h.strip() for h in (reader.fieldnames or [])]
-        missing = [c for c in spec["columns"] if c not in headers]
-        if missing:
-            raise SeedError(f"{spec['table']}: {path.name} is missing required header(s): {', '.join(missing)}")
-        reader.fieldnames = headers
-        rows = []
-        for line_number, raw in enumerate(reader, start=2):     # line 1 is the header
-            row = {c: (raw.get(c) or "").strip() or None for c in spec["columns"]}
-            rows.append((line_number, row))
+    missing = []
+    for header in REQUIRED_HEADERS[file_name]:
+        if header not in headers:
+            missing.append(header)
+    if len(missing) > 0:
+        csv_file.close()
+        raise SeedError(file_name + " is missing required header(s): " + ", ".join(missing))
+
+    rows = []
+    for row in reader:
+        clean = {}
+        for header in headers:
+            clean[header] = (row[header] or "").strip()
+        rows.append(clean)
+    csv_file.close()
+    log("STAGE validate: " + file_name + " headers OK, " + str(len(rows)) + " rows")
     return rows
 
 
-# ---------- Stage 3: check and load rows ----------
-
-def check_row(table, row, required, seen_keys, key, loaded):
-    """Return why the row must be rejected, or None if it is OK to insert.
-
-    `loaded` holds the IDs already inserted, so a row whose parent was rejected is rejected too.
-    loaded["account"] maps account_id -> the customer who owns it.
-    """
-    for column in required:
-        if row[column] is None:
-            return f"required value '{column}' is empty"
-    if row[key] in seen_keys:
-        return f"duplicate {key} '{row[key]}' in source file"
-
-    if table == "account" and row["customer_id"] not in loaded["customer"]:
-        return f"customer_id '{row['customer_id']}' does not exist in customer"
-
-    if table in ("complaint", "service_request"):
-        if row["customer_id"] not in loaded["customer"]:
-            return f"customer_id '{row['customer_id']}' does not exist in customer"
-        account_id = row["account_id"]
-        if account_id is not None:            # an account is optional
-            owner = loaded["account"].get(account_id)
-            if owner is None:
-                return f"account_id '{account_id}' does not exist in accounts"
-            if owner != row["customer_id"]:
-                return f"account_id '{account_id}' belongs to customer '{owner}', not to customer '{row['customer_id']}'"
-
-    if table == "complaint":
-        employee_id = row["assigned_employee_id"]
-        if employee_id is not None and employee_id not in loaded["employee"]:
-            return f"assigned_employee_id '{employee_id}' does not exist in employee"
+def first_blank(row, columns):
+    """Gives back the first required column that is empty, or None."""
+    for column in columns:
+        if row[column] == "":
+            return column
     return None
 
 
-def load_table(cur, spec, rows, loaded):
-    table, key, columns = spec["table"], spec["key"], spec["columns"]
-    insert_sql = (f"INSERT INTO {table} ({', '.join(columns)}) "
-                  f"VALUES ({', '.join(['%s'] * len(columns))})")
-    seen_keys = set()
-    inserted = 0
-    rejected = []      # (line_number, key value, reason)
+class Loader:
+    """Checks each row before it is inserted, and remembers what has been loaded,
+    so a row whose customer, account or complaint was rejected is rejected too."""
 
-    for line_number, row in rows:
-        reason = check_row(table, row, spec["required"], seen_keys, key, loaded)
-        if reason is None:
-            # A savepoint lets the database reject just this row (for example a bad segment value)
-            # without cancelling the rest of the run.
-            cur.execute("SAVEPOINT one_row")
-            try:
-                cur.execute(insert_sql, [row[c] for c in columns])
-                cur.execute("RELEASE SAVEPOINT one_row")
-            except psycopg2.Error as error:
-                cur.execute("ROLLBACK TO SAVEPOINT one_row")
-                reason = "database rejected row: " + str(error).strip().splitlines()[0]
+    def __init__(self, cursor):
+        self.cursor = cursor
+        self.customers = []          # loaded customer IDs
+        self.account_owner = {}      # account_id -> customer_id
+        self.complaint_info = {}     # complaint_id -> (customer_id, account_id)
+        self.request_ids = []
+        self.results = []            # one entry per table: name, source, inserted, rejected
+        self.rejected = []           # every rejected row, for the report
 
-        if reason:
-            rejected.append((line_number, row[key] or "<blank>", reason))
-            log(f"REJECT {spec['file']} line {line_number} ({row[key] or '<blank>'}): {reason}")
-            continue
+    def reject(self, file_name, line, row_id, reason):
+        self.rejected.append(file_name + " line " + str(line) + " (" + (row_id or "<blank>") + "): " + reason)
+        log("REJECT " + file_name + " line " + str(line) + " (" + (row_id or "<blank>") + "): " + reason)
 
-        seen_keys.add(row[key])
-        inserted += 1
-        if table == "account":
-            loaded["account"][row["account_id"]] = row["customer_id"]
-        else:
-            loaded[table].add(row[key])
+    def finish(self, table, file_name, rows, inserted):
+        rejected = len(rows) - inserted
+        self.results.append({"table": table, "source": len(rows), "inserted": inserted, "rejected": rejected})
+        log("STAGE load: " + table + " source=" + str(len(rows)) + " inserted=" + str(inserted)
+            + " rejected=" + str(rejected))
 
-    log(f"STAGE load: {table:<16} source={len(rows):<3} inserted={inserted:<3} rejected={len(rejected)}")
-    return {"table": table, "source": len(rows), "inserted": inserted, "rejected": rejected}
+    def load_customers(self, rows):
+        inserted = 0
+        line = 1                     # line 1 is the header
+        for row in rows:
+            line = line + 1
+            row_id = row["customer_id"]
+            blank = first_blank(row, ["customer_id", "first_name", "last_name", "segment"])
+            if blank:
+                self.reject("customers.csv", line, row_id, "required value '" + blank + "' is empty")
+                continue
+            if row_id in self.customers:
+                self.reject("customers.csv", line, row_id, "duplicate customer_id")
+                continue
+            if row["segment"] not in CUSTOMER_SEGMENT:
+                self.reject("customers.csv", line, row_id, "unknown segment '" + row["segment"] + "'")
+                continue
+
+            self.cursor.execute(
+                "INSERT INTO customer (customer_id, first_name, last_name, email, phone_number, segment) "
+                "VALUES (%s, %s, %s, %s, NULL, %s)",
+                (row_id, row["first_name"], row["last_name"], row["email"] or None,
+                 CUSTOMER_SEGMENT[row["segment"]]),
+            )
+            self.customers.append(row_id)
+            inserted = inserted + 1
+        self.finish("customer", "customers.csv", rows, inserted)
+
+    def load_accounts(self, rows):
+        inserted = 0
+        line = 1
+        for row in rows:
+            line = line + 1
+            row_id = row["account_id"]
+            blank = first_blank(row, ["account_id", "customer_id", "account_type", "status", "current_balance"])
+            if blank:
+                self.reject("accounts.csv", line, row_id, "required value '" + blank + "' is empty")
+                continue
+            if row_id in self.account_owner:
+                self.reject("accounts.csv", line, row_id, "duplicate account_id")
+                continue
+            if row["customer_id"] not in self.customers:
+                self.reject("accounts.csv", line, row_id, "customer_id '" + row["customer_id"] + "' does not exist")
+                continue
+            if row["status"] not in ACCOUNT_STATUS:
+                self.reject("accounts.csv", line, row_id, "unknown status '" + row["status"] + "'")
+                continue
+            if not is_number(row["current_balance"]):
+                self.reject("accounts.csv", line, row_id, "balance '" + row["current_balance"] + "' is not a number")
+                continue
+
+            self.cursor.execute(
+                "INSERT INTO account (account_id, customer_id, account_number, account_type, status, balance, open_date) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (row_id, row["customer_id"], row_id, row["account_type"], ACCOUNT_STATUS[row["status"]],
+                 row["current_balance"], ACCOUNT_OPEN_DATE),
+            )
+            self.account_owner[row_id] = row["customer_id"]
+            inserted = inserted + 1
+        self.finish("account", "accounts.csv", rows, inserted)
+
+    def load_complaints(self, rows):
+        inserted = 0
+        line = 1
+        for row in rows:
+            line = line + 1
+            row_id = row["complaint_id"]
+            customer_id = row["customer_id"]
+            account_id = row["account_id"] or None          # an account is optional
+            blank = first_blank(row, ["complaint_id", "customer_id", "category", "status",
+                                      "date_opened", "channel", "priority"])
+            if blank:
+                self.reject("complaints.csv", line, row_id, "required value '" + blank + "' is empty")
+                continue
+            if row_id in self.complaint_info:
+                self.reject("complaints.csv", line, row_id, "duplicate complaint_id")
+                continue
+            if customer_id not in self.customers:
+                self.reject("complaints.csv", line, row_id, "customer_id '" + customer_id + "' does not exist")
+                continue
+            if account_id is not None and account_id not in self.account_owner:
+                self.reject("complaints.csv", line, row_id, "account_id '" + account_id + "' does not exist")
+                continue
+            if account_id is not None and self.account_owner[account_id] != customer_id:
+                self.reject("complaints.csv", line, row_id, "account_id '" + account_id + "' belongs to customer '"
+                            + self.account_owner[account_id] + "', not '" + customer_id + "'")
+                continue
+            if row["status"] not in COMPLAINT_STATUS:
+                self.reject("complaints.csv", line, row_id, "unknown status '" + row["status"] + "'")
+                continue
+            if row["priority"] not in PRIORITIES:
+                self.reject("complaints.csv", line, row_id, "unknown priority '" + row["priority"] + "'")
+                continue
+            opened = read_date(row["date_opened"])
+            if opened is None:
+                self.reject("complaints.csv", line, row_id, "date_opened '" + row["date_opened"] + "' is not a M/D/YYYY date")
+                continue
+
+            self.cursor.execute(
+                "INSERT INTO complaint (complaint_id, customer_id, account_id, channel, category, customer_narrative, "
+                "priority, status, created_at, assigned_employee_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)",
+                (row_id, customer_id, account_id, row["channel"], row["category"], NO_COMPLAINT_TEXT,
+                 row["priority"], COMPLAINT_STATUS[row["status"]], opened),
+            )
+            self.complaint_info[row_id] = (customer_id, account_id)
+            inserted = inserted + 1
+        self.finish("complaint", "complaints.csv", rows, inserted)
+
+    def load_service_requests(self, rows):
+        inserted = 0
+        line = 1
+        for row in rows:
+            line = line + 1
+            row_id = row["request_id"]
+            customer_id = row["customer_id"]
+            complaint_id = row["complaint_id"] or None      # a linked complaint is optional
+            blank = first_blank(row, ["request_id", "customer_id", "request_type", "status", "created_date"])
+            if blank:
+                self.reject("service_requests.csv", line, row_id, "required value '" + blank + "' is empty")
+                continue
+            if row_id in self.request_ids:
+                self.reject("service_requests.csv", line, row_id, "duplicate request_id")
+                continue
+            if customer_id not in self.customers:
+                self.reject("service_requests.csv", line, row_id, "customer_id '" + customer_id + "' does not exist")
+                continue
+            if complaint_id is not None and complaint_id not in self.complaint_info:
+                self.reject("service_requests.csv", line, row_id, "complaint_id '" + complaint_id + "' does not exist")
+                continue
+            if complaint_id is not None and self.complaint_info[complaint_id][0] != customer_id:
+                self.reject("service_requests.csv", line, row_id, "complaint_id '" + complaint_id
+                            + "' belongs to another customer")
+                continue
+            if row["status"] not in REQUEST_STATUS:
+                self.reject("service_requests.csv", line, row_id, "unknown status '" + row["status"] + "'")
+                continue
+            created = read_date(row["created_date"])
+            if created is None:
+                self.reject("service_requests.csv", line, row_id, "created_date '" + row["created_date"] + "' is not a M/D/YYYY date")
+                continue
+
+            status = REQUEST_STATUS[row["status"]]
+            account_id = None
+            if complaint_id is not None:
+                account_id = self.complaint_info[complaint_id][1]
+            closed = None
+            if status == "CLOSED":
+                closed = created                            # stand-in, see STAND_INS
+
+            self.cursor.execute(
+                "INSERT INTO service_request (request_id, customer_id, account_id, request_type, status, "
+                "created_date, closed_date) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (row_id, customer_id, account_id, row["request_type"], status, created, closed),
+            )
+            self.request_ids.append(row_id)
+            inserted = inserted + 1
+        self.finish("service_request", "service_requests.csv", rows, inserted)
 
 
-def validate_and_load(cur, data_dir):
-    # Check every file's headers first, so a bad header stops the run before any insert.
-    all_rows = {}
-    for spec in TABLES:
-        all_rows[spec["table"]] = read_csv(data_dir / spec["file"], spec)
-        log(f"STAGE validate: {spec['file']:<20} headers OK, {len(all_rows[spec['table']])} data row(s)")
+# ----- Step 3: verify -----
 
-    loaded = {"employee": set(), "customer": set(), "account": {}, "complaint": set(), "service_request": set()}
-    return [load_table(cur, spec, all_rows[spec["table"]], loaded) for spec in TABLES]
+COUNT_QUERIES = {
+    "customer": "SELECT COUNT(*) FROM customer",
+    "account": "SELECT COUNT(*) FROM account",
+    "complaint": "SELECT COUNT(*) FROM complaint",
+    "service_request": "SELECT COUNT(*) FROM service_request",
+}
+
+# Each check should find 0 rows. A row found is an orphan or a broken link.
+ORPHAN_CHECKS = [
+    ("account -> customer",
+     "SELECT a.account_id FROM account a LEFT JOIN customer c ON a.customer_id = c.customer_id "
+     "WHERE c.customer_id IS NULL"),
+    ("complaint -> customer",
+     "SELECT x.complaint_id FROM complaint x LEFT JOIN customer c ON x.customer_id = c.customer_id "
+     "WHERE c.customer_id IS NULL"),
+    ("complaint -> account (when there is one)",
+     "SELECT x.complaint_id FROM complaint x LEFT JOIN account a ON x.account_id = a.account_id "
+     "WHERE x.account_id IS NOT NULL AND a.account_id IS NULL"),
+    ("complaint account belongs to the complaint customer",
+     "SELECT x.complaint_id FROM complaint x JOIN account a ON x.account_id = a.account_id "
+     "WHERE a.customer_id <> x.customer_id"),
+    ("service_request -> customer",
+     "SELECT s.request_id FROM service_request s LEFT JOIN customer c ON s.customer_id = c.customer_id "
+     "WHERE c.customer_id IS NULL"),
+    ("service_request -> account (when there is one)",
+     "SELECT s.request_id FROM service_request s LEFT JOIN account a ON s.account_id = a.account_id "
+     "WHERE s.account_id IS NOT NULL AND a.account_id IS NULL"),
+    ("service_request account belongs to the request customer",
+     "SELECT s.request_id FROM service_request s JOIN account a ON s.account_id = a.account_id "
+     "WHERE a.customer_id <> s.customer_id"),
+]
 
 
-# ---------- Stage 4: verify ----------
-
-def verify(cur, results):
-    """Return (report_lines, failures). Any failure means the run is rolled back."""
+def verify(cursor, loader):
+    """Gives back (report lines, failures). Any failure means everything is undone."""
     failures = []
-    lines = ["ROW COUNTS (source vs inserted vs database)", "-" * 78,
-             f"{'table':<18}{'source':>8}{'inserted':>10}{'rejected':>10}{'in_db':>8}  result"]
-    for r in results:
-        cur.execute(f"SELECT COUNT(*) FROM {r['table']}")     # table name comes from TABLES, not from input
-        in_db = cur.fetchone()[0]
-        ok = r["inserted"] + len(r["rejected"]) == r["source"] and in_db == r["inserted"]
+    lines = ["ROW COUNTS (file vs inserted vs database)", "-" * 72,
+             "table              file  inserted  rejected  in_db  result"]
+    for result in loader.results:
+        cursor.execute(COUNT_QUERIES[result["table"]])
+        in_db = cursor.fetchone()[0]
+        ok = result["inserted"] + result["rejected"] == result["source"] and in_db == result["inserted"]
         if not ok:
-            failures.append(f"count mismatch for {r['table']}")
-        lines.append(f"{r['table']:<18}{r['source']:>8}{r['inserted']:>10}{len(r['rejected']):>10}{in_db:>8}  "
-                     f"{'PASS' if ok else 'FAIL'}")
+            failures.append("count mismatch for " + result["table"])
+        lines.append(result["table"].ljust(17) + str(result["source"]).rjust(6) + str(result["inserted"]).rjust(10)
+                     + str(result["rejected"]).rjust(10) + str(in_db).rjust(7) + "  " + ("PASS" if ok else "FAIL"))
 
-    lines += ["", "ORPHAN / CONSISTENCY CHECKS (expected 0 rows each)", "-" * 78]
+    lines += ["", "ORPHAN AND CONSISTENCY CHECKS (each should find 0 rows)", "-" * 72]
     for name, check_sql in ORPHAN_CHECKS:
-        cur.execute(check_sql)
-        bad = [row[0] for row in cur.fetchall()]
-        if bad:
-            failures.append(f"{name}: {', '.join(bad)}")
-        lines.append(f"{name:<55}{len(bad):>4}  {'PASS' if not bad else 'FAIL ' + ', '.join(bad)}")
-        log(f"STAGE verify: {name:<52} {'PASS' if not bad else 'FAIL'}")
+        cursor.execute(check_sql)
+        bad_ids = []
+        for row in cursor.fetchall():
+            bad_ids.append(row[0])
+        if len(bad_ids) > 0:
+            failures.append(name + ": " + ", ".join(bad_ids))
+        lines.append(name.ljust(58) + str(len(bad_ids)).rjust(3) + "  " + ("PASS" if len(bad_ids) == 0 else "FAIL"))
+        log("STAGE verify: " + name + " " + ("PASS" if len(bad_ids) == 0 else "FAIL"))
 
-    cur.execute("SELECT COUNT(*) FROM complaint WHERE account_id IS NULL")
-    complaints_without_account = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM service_request WHERE account_id IS NULL")
-    requests_without_account = cur.fetchone()[0]
-    lines += ["", "OPTIONAL ACCOUNT LINKS (valid by design, not orphans)", "-" * 78,
-              f"complaints with no account_id (general / identity / fraud): {complaints_without_account}",
-              f"service requests with no account_id:                        {requests_without_account}"]
+    cursor.execute("SELECT COUNT(*) FROM complaint WHERE account_id IS NULL")
+    complaints_without_account = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM service_request WHERE account_id IS NULL")
+    requests_without_account = cursor.fetchone()[0]
+    lines += ["", "OPTIONAL ACCOUNT LINKS (allowed, not orphans)", "-" * 72,
+              "complaints with no account:        " + str(complaints_without_account),
+              "service requests with no account:  " + str(requests_without_account)]
 
-    lines += ["", "REJECTED ROWS", "-" * 78]
-    rejected_lines = [f"{r['table']}: line {n} ({k}) - {why}" for r in results for n, k, why in r["rejected"]]
-    lines += rejected_lines or ["none"]
+    lines += ["", "REJECTED ROWS", "-" * 72]
+    if len(loader.rejected) == 0:
+        lines.append("none")
+    else:
+        lines += loader.rejected
+
+    lines += ["", "STAND-IN VALUES (the shared files don't have these, see README_setup.md)", "-" * 72]
+    lines += STAND_INS
     return lines, failures
 
 
-def write_report(path, settings, args, body, result):
-    header = [
-        "INTEGRITY REPORT - Exercise 2.5.1 Database Seeder",
-        "=" * 78,
-        f"generated : {datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"database  : {settings['user']}@{settings['host']}:{settings['port']}/{settings['dbname']}",
-        f"data dir  : {args.data_dir}",
-        f"mode      : reset={args.reset} strict={args.strict}",
-        f"result    : {result}",
-        "",
-    ]
-    Path(path).write_text("\n".join(header + body) + "\n", encoding="utf-8")
+def write_report(settings, data_folder, reset, result, body):
+    lines = ["INTEGRITY REPORT - Exercise 2.5.1 Database Seeder", "=" * 72,
+             "generated : " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+             "database  : " + settings["user"] + "@" + settings["host"] + ":" + str(settings["port"]) + "/" + DATABASE_NAME,
+             "data      : " + data_folder,
+             "reset     : " + str(reset),
+             "result    : " + result, ""]
+    report = open(REPORT_FILE, "w", encoding="utf-8")
+    report.write("\n".join(lines + body) + "\n")
+    report.close()
 
 
-# ---------- Run everything ----------
+# ----- Run everything -----
 
-def run(args):
-    settings = db_settings(args.dbname)
-    log("=" * 70)
-    log(f"RUN START  db={settings['user']}@{settings['host']}:{settings['port']}/{settings['dbname']}  "
-        f"reset={args.reset} strict={args.strict}  data={args.data_dir}")
+def run(reset, data_folder):
+    read_env_file()
+    settings = get_settings()
+    folder_name = os.path.relpath(data_folder, HERE)
+    log("RUN START: database=" + DATABASE_NAME + " on " + settings["host"] + ":" + str(settings["port"])
+        + " reset=" + str(reset) + " data=" + folder_name)
 
-    if args.create_db:
-        create_database_if_missing(settings)
+    create_database_if_missing(settings)
+    connection = psycopg2.connect(dbname=DATABASE_NAME, connect_timeout=5, **settings)
+    cursor = connection.cursor()
+    log("STAGE init: connected, everything below is one transaction")
     try:
-        connection = psycopg2.connect(**settings, connect_timeout=5)
-    except psycopg2.OperationalError as error:
-        raise SeedError(f"Cannot connect to {settings['host']}:{settings['port']}/{settings['dbname']}: "
-                        f"{str(error).strip().splitlines()[0]}")
-    log("STAGE connect: connected, starting one transaction")
+        initialize(cursor, reset)
 
-    try:
-        with connection.cursor() as cur:
-            initialize(cur, args.reset)
-            results = validate_and_load(cur, Path(args.data_dir))
-            report, failures = verify(cur, results)
+        # Read and check all 4 files before inserting anything.
+        customers = read_csv(data_folder, "customers.csv")
+        accounts = read_csv(data_folder, "accounts.csv")
+        complaints = read_csv(data_folder, "complaints.csv")
+        requests = read_csv(data_folder, "service_requests.csv")
 
-            rejected = sum(len(r["rejected"]) for r in results)
-            if args.strict and rejected:
-                failures.append(f"--strict: {rejected} row(s) rejected")
+        # Parents before children, so every link can be checked.
+        loader = Loader(cursor)
+        loader.load_customers(customers)
+        loader.load_accounts(accounts)
+        loader.load_complaints(complaints)
+        loader.load_service_requests(requests)
 
-            if failures:
-                connection.rollback()
-                for failure in failures:
-                    log(f"CRITICAL: {failure}")
-                result = "FAILED - transaction rolled back, database unchanged"
-                write_report(args.report, settings, args, report + ["", "FAILURES"] + failures, result)
-                log(f"ROLLBACK: {result}")
-                return False
+        body, failures = verify(cursor, loader)
+        if len(failures) > 0:
+            connection.rollback()
+            for failure in failures:
+                log("CRITICAL: " + failure)
+            write_report(settings, folder_name, reset, "FAILED - everything undone, database unchanged",
+                         body + ["", "FAILURES"] + failures)
+            log("ROLLBACK: integrity check failed, nothing was saved")
+            return False
 
-            connection.commit()
-            result = "PASSED - committed" + (f" ({rejected} row(s) rejected, see below)" if rejected else "")
-            write_report(args.report, settings, args, report, result)
-            log(f"COMMIT: {result}")
-            log(f"Report written to {args.report}")
-            return True
+        connection.commit()
+        result = "PASSED - saved"
+        if len(loader.rejected) > 0:
+            result = result + " (" + str(len(loader.rejected)) + " row(s) rejected, see below)"
+        write_report(settings, folder_name, reset, result, body)
+        log("COMMIT: " + result)
+        log("Report written to integrity_report.txt")
+        return True
     except Exception:
-        connection.rollback()     # anything unexpected: undo everything
+        connection.rollback()          # anything unexpected: undo everything
+        log("ROLLBACK: nothing was saved")
         raise
     finally:
+        cursor.close()
         connection.close()
 
 
-def main(argv=None):
-    global LOG_FILE
-    parser = argparse.ArgumentParser(description="Initialize and seed the complaint training database.")
-    parser.add_argument("--reset", action="store_true", help="drop and recreate existing tables (DELETES their data)")
-    parser.add_argument("--create-db", action="store_true", help="create the database first if it does not exist")
-    parser.add_argument("--strict", action="store_true", help="roll back everything if any row is rejected")
-    parser.add_argument("--dbname", help="database name (instead of DB_NAME)")
-    parser.add_argument("--data-dir", default=HERE / "data", help="folder with the seed CSV files")
-    parser.add_argument("--log", default=HERE / "seed_run_log.txt", help="run log file (added to each run)")
-    parser.add_argument("--report", default=HERE / "integrity_report.txt", help="integrity report (replaced each run)")
-    args = parser.parse_args(argv)
-
-    LOG_FILE = Path(args.log)
-    load_dotenv(Path.cwd() / ".env")
-    load_dotenv(REPO_ROOT / ".env")
+def main():
+    reset = "--reset" in sys.argv
+    data_folder = os.path.join(HERE, "data")
+    if "--data" in sys.argv:            # used for the failure tests: --data <folder>
+        data_folder = os.path.abspath(sys.argv[sys.argv.index("--data") + 1])
 
     try:
-        ok = run(args)
+        ok = run(reset, data_folder)
     except SeedError as error:
-        log(f"CRITICAL: {error}")
+        log("CRITICAL: " + str(error))
         ok = False
-    except Exception as error:
-        log(f"UNEXPECTED ERROR: {type(error).__name__}: {str(error).strip().splitlines()[0]}")
+    except psycopg2.Error as error:
+        log("DATABASE ERROR: " + str(error).strip().splitlines()[0])
         ok = False
 
-    log("RUN END: " + ("success" if ok else "failed, no changes saved"))
-    return 0 if ok else 1
+    if ok:
+        log("RUN END: success")
+        sys.exit(0)
+    log("RUN END: failed, no changes saved")
+    sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
