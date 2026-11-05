@@ -26,12 +26,14 @@ Steps 1–3 keep all 30 complaints, so nothing is lost or repeated. Step 4 shows
 
 ## complaint_analyst_view checks
 
-| Check | Expected | Actual | Result |
-|---|---|---|---|
-| C01 View rows | 30 | 30 | PASS |
-| C02 Distinct complaints (no duplicates) | 30 | 30 | PASS |
-| C03 Complaints with no account are kept | 3 | 3 | PASS |
-| C04 Open complaints | 29 | 29 | PASS |
+The check at the end of `complaint_analyst_view.sql` returns one row:
+
+| Column | What it checks | Expected | Actual | Result |
+|---|---|---|---|---|
+| `view_rows` | Rows in the view | 30 | 30 | PASS |
+| `distinct_complaints` | No duplicates | 30 | 30 | PASS |
+| `no_account` | Complaints with no account are kept | 3 | 3 | PASS |
+| `open_complaints` | Open complaints | 29 | 29 | PASS |
 
 The view leaves out customer names, email, phone, account number and balance.
 
