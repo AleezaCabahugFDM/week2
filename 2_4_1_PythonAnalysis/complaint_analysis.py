@@ -152,12 +152,8 @@ for row in good_rows:
 open_count = total - closed_count
 
 # The category with the most complaints.
-top_category = ""
-top_count = 0
-for category in sorted(category_counts, key=category_counts.get, reverse=True):     # biggest first
-    if category_counts[category] > top_count:
-        top_category = category
-        top_count = category_counts[category]
+top_category = max(category_counts, key=category_counts.get)
+top_count = category_counts[top_category]
 top_percent = round(top_count / total * 100, 1)
 
 # Average days to close, overall and for each category. None means unknown (not 0).
