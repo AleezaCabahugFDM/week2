@@ -1,13 +1,18 @@
 metric_name,grouping,group_value,metric_value,unit,calculation_date,as_of_date
-complaint_count,overall,all,30,complaints,2026-11-04,2025-02-24
-distinct_customers,overall,all,10,customers,2026-11-04,2025-02-24
-backlog_count,overall,all,29,complaints,2026-11-04,2025-02-24
-escalated_backlog_count,overall,all,1,complaints,2026-11-04,2025-02-24
-escalated_by_status_only,overall,all,0,complaints,2026-11-04,2025-02-24
-customers_with_open_complaint,overall,all,10,customers,2026-11-04,2025-02-24
-closed_count,overall,all,1,complaints,2026-11-04,2025-02-24
-backlog_avg_age_days,overall,all,19.4,days,2026-11-04,2025-02-24
-avg_resolution_days,overall,all,3.0,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Card Issue,,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Customer Service,,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Fee Dispute,3.0,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Fraud Claim,,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Online Banking,,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Service Delay,,days,2026-11-04,2025-02-24
+avg_resolution_days,category,Transaction Error,,days,2026-11-04,2025-02-24
+closed_count,category,Card Issue,0,complaints,2026-11-04,2025-02-24
+closed_count,category,Customer Service,0,complaints,2026-11-04,2025-02-24
+closed_count,category,Fee Dispute,1,complaints,2026-11-04,2025-02-24
+closed_count,category,Fraud Claim,0,complaints,2026-11-04,2025-02-24
+closed_count,category,Online Banking,0,complaints,2026-11-04,2025-02-24
+closed_count,category,Service Delay,0,complaints,2026-11-04,2025-02-24
+closed_count,category,Transaction Error,0,complaints,2026-11-04,2025-02-24
 complaint_count,category,Card Issue,2,complaints,2026-11-04,2025-02-24
 complaint_count,category,Customer Service,5,complaints,2026-11-04,2025-02-24
 complaint_count,category,Fee Dispute,7,complaints,2026-11-04,2025-02-24
@@ -22,20 +27,23 @@ distinct_customers,category,Fraud Claim,1,customers,2026-11-04,2025-02-24
 distinct_customers,category,Online Banking,3,customers,2026-11-04,2025-02-24
 distinct_customers,category,Service Delay,5,customers,2026-11-04,2025-02-24
 distinct_customers,category,Transaction Error,3,customers,2026-11-04,2025-02-24
-closed_count,category,Card Issue,0,complaints,2026-11-04,2025-02-24
-closed_count,category,Customer Service,0,complaints,2026-11-04,2025-02-24
-closed_count,category,Fee Dispute,1,complaints,2026-11-04,2025-02-24
-closed_count,category,Fraud Claim,0,complaints,2026-11-04,2025-02-24
-closed_count,category,Online Banking,0,complaints,2026-11-04,2025-02-24
-closed_count,category,Service Delay,0,complaints,2026-11-04,2025-02-24
-closed_count,category,Transaction Error,0,complaints,2026-11-04,2025-02-24
-avg_resolution_days,category,Card Issue,,days,2026-11-04,2025-02-24
-avg_resolution_days,category,Customer Service,,days,2026-11-04,2025-02-24
-avg_resolution_days,category,Fee Dispute,3.0,days,2026-11-04,2025-02-24
-avg_resolution_days,category,Fraud Claim,,days,2026-11-04,2025-02-24
-avg_resolution_days,category,Online Banking,,days,2026-11-04,2025-02-24
-avg_resolution_days,category,Service Delay,,days,2026-11-04,2025-02-24
-avg_resolution_days,category,Transaction Error,,days,2026-11-04,2025-02-24
+complaint_count,opened_month,2025-01,10,complaints,2026-11-04,2025-02-24
+complaint_count,opened_month,2025-02,20,complaints,2026-11-04,2025-02-24
+distinct_customers,opened_month,2025-01,10,customers,2026-11-04,2025-02-24
+distinct_customers,opened_month,2025-02,10,customers,2026-11-04,2025-02-24
+avg_resolution_days,overall,all,3.0,days,2026-11-04,2025-02-24
+backlog_avg_age_days,overall,all,19.4,days,2026-11-04,2025-02-24
+backlog_count,overall,all,29,complaints,2026-11-04,2025-02-24
+closed_count,overall,all,1,complaints,2026-11-04,2025-02-24
+complaint_count,overall,all,30,complaints,2026-11-04,2025-02-24
+customers_with_open_complaint,overall,all,10,customers,2026-11-04,2025-02-24
+distinct_customers,overall,all,10,customers,2026-11-04,2025-02-24
+escalated_backlog_count,overall,all,1,complaints,2026-11-04,2025-02-24
+escalated_by_status_only,overall,all,0,complaints,2026-11-04,2025-02-24
+backlog_count,priority,Critical,3,complaints,2026-11-04,2025-02-24
+backlog_count,priority,High,9,complaints,2026-11-04,2025-02-24
+backlog_count,priority,Low,8,complaints,2026-11-04,2025-02-24
+backlog_count,priority,Medium,9,complaints,2026-11-04,2025-02-24
 complaint_count,status,CLOSED,1,complaints,2026-11-04,2025-02-24
 complaint_count,status,IN_PROGRESS,4,complaints,2026-11-04,2025-02-24
 complaint_count,status,OPEN,19,complaints,2026-11-04,2025-02-24
@@ -44,11 +52,3 @@ distinct_customers,status,CLOSED,1,customers,2026-11-04,2025-02-24
 distinct_customers,status,IN_PROGRESS,3,customers,2026-11-04,2025-02-24
 distinct_customers,status,OPEN,10,customers,2026-11-04,2025-02-24
 distinct_customers,status,UNDER_REVIEW,4,customers,2026-11-04,2025-02-24
-complaint_count,opened_month,2025-01,10,complaints,2026-11-04,2025-02-24
-complaint_count,opened_month,2025-02,20,complaints,2026-11-04,2025-02-24
-distinct_customers,opened_month,2025-01,10,customers,2026-11-04,2025-02-24
-distinct_customers,opened_month,2025-02,10,customers,2026-11-04,2025-02-24
-backlog_count,priority,Critical,3,complaints,2026-11-04,2025-02-24
-backlog_count,priority,High,9,complaints,2026-11-04,2025-02-24
-backlog_count,priority,Low,8,complaints,2026-11-04,2025-02-24
-backlog_count,priority,Medium,9,complaints,2026-11-04,2025-02-24

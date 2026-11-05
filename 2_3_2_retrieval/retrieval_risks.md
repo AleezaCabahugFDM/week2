@@ -25,7 +25,7 @@ Week 2 | Exercise 2.3.2 · Step 3
 | Read-only database role | SQL | The assistant's role has `SELECT` on approved views only. No `INSERT`, `UPDATE`, `DELETE` or DDL. |
 | Statement check | Free text-to-SQL (if ever enabled) | Parse the statement and reject anything that is not a single `SELECT`. Reject multiple statements, comments that hide statements, and `pg_` or system catalogs. |
 | Resource limits | SQL | `statement_timeout` of 5 s, a default `LIMIT 200`, no cross joins without a join condition. |
-| Grain check | SQL | Aggregates read from `complaint_analyst_view` (one row per complaint). Joins to review or investigation tables are pre-aggregated, as in 2.2.1. |
+| Grain check | SQL | Aggregates read from `complaint_analyst_view` (one row per complaint). Review or investigation tables are joined only when needed, and the row count is checked so a complaint is not counted twice. |
 | Definitions fixed in code | SQL | "Open" means not `RESOLVED`/`CLOSED`, and resolution days are investigation `end_date` − `created_at` (2.2.2). The model does not choose definitions. |
 | NULL means unknown | SQL, synthesis | NULL is reported as "unknown / not recorded", never as 0 (for example no response date in Flow 3, or a category with no closed cases in Q4). |
 | Numbers come from SQL only | Synthesis | Every number in an answer must appear in the stage 1 rows. A post-check compares numbers in the answer text with the returned values. |
@@ -40,7 +40,7 @@ Week 2 | Exercise 2.3.2 · Step 3
 | Relevance threshold | Below the similarity threshold, the reply is "no matching policy found, route to Specialist". It never answers from the nearest weak match (Q2). |
 | Mandatory citation | Every policy sentence cites `section_id`, policy title and version. An answer with no citation is rejected. |
 | Column filtering | The analyst view excludes names, email and phone (2.2.1 design), and synthesis receives only the columns the flow needs. |
-| Row-level scope | Queries are scoped to complaints the requesting employee can see. A `security_invoker` view enforces the caller's permissions. |
+| Row-level scope | Queries are scoped to complaints the requesting employee can see. Database permissions (for example a `security_invoker` view) enforce the caller's access. |
 | Untrusted text | `customer_narrative`, `findings` and policy text are passed to the model as quoted data. Instructions inside them are ignored and logged. |
 
 ### 2.3 Allowlists

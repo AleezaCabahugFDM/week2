@@ -20,7 +20,7 @@ Requires Python 3.9+.
 python3 -m pip install --user psycopg2-binary fastapi uvicorn httpx
 ```
 
-Set these environment variables. The names come from `environment_example.txt`.
+Set these environment variables:
 
 | Variable | Example |
 |---|---|

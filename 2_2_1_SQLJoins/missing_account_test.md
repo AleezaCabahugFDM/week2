@@ -21,11 +21,11 @@ SELECT c.complaint_id,
        a.account_type,
        c.category,
        c.status
-FROM   complaint AS c
-INNER  JOIN customer AS cu ON cu.customer_id = c.customer_id
-LEFT   JOIN account  AS a  ON a.account_id   = c.account_id
-WHERE  c.account_id IS NULL
-ORDER  BY c.complaint_id;
+FROM complaint c
+JOIN customer cu ON c.customer_id = cu.customer_id
+LEFT JOIN account a ON c.account_id = a.account_id
+WHERE c.account_id IS NULL
+ORDER BY c.complaint_id;
 ```
 
 **Result:**
@@ -45,9 +45,9 @@ ORDER  BY c.complaint_id;
 
 ```sql
 SELECT complaint_id, customer_id, account_id, account_type, has_account, is_open
-FROM   complaint_analyst_view
-WHERE  account_id IS NULL
-ORDER  BY complaint_id;
+FROM complaint_analyst_view
+WHERE account_id IS NULL
+ORDER BY complaint_id;
 ```
 
 **Result:**
@@ -67,9 +67,9 @@ ORDER  BY complaint_id;
 
 ```sql
 SELECT COUNT(*) AS rows_with_inner_join
-FROM   complaint AS c
-JOIN   account   AS a ON a.account_id = c.account_id
-WHERE  c.complaint_id IN ('CMP023', 'CMP029', 'CMP030');
+FROM complaint c
+JOIN account a ON c.account_id = a.account_id
+WHERE c.complaint_id IN ('CMP023', 'CMP029', 'CMP030');
 ```
 
 **Result:** `0`
@@ -84,6 +84,6 @@ WHERE  c.complaint_id IN ('CMP023', 'CMP029', 'CMP030');
 | Analyst view keeps no-account complaints | 3 | 3 | PASS |
 | INNER JOIN loses them (negative test) | 0 | 0 | PASS |
 
-The same tests run automatically as check V05 and V07 in `join_queries.sql`, and C03 in `complaint_analyst_view.sql`.
+The same idea is checked in J3 of `join_queries.sql` (LEFT JOIN keeps 30, INNER JOIN drops to 27) and check C02 in `complaint_analyst_view.sql`.
 
 **To reproduce:** run the queries above in psql or the Supabase SQL Editor (run `complaint_analyst_view.sql` first for Test 2). In Supabase, NULLs show as empty cells or `NULL`.
