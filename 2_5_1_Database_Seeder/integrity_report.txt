@@ -1,0 +1,36 @@
+INTEGRITY REPORT - Exercise 2.5.1 Database Seeder
+==============================================================================
+generated : 2026-11-04 14:59:58
+database  : postgres@localhost:5432/complaints_seed
+data dir  : /Users/aleeza/Documents/GitHub/week2/2_5_1_Database_Seeder/data
+mode      : reset=True strict=False
+result    : PASSED - committed
+
+ROW COUNTS (source vs inserted vs database)
+------------------------------------------------------------------------------
+table               source  inserted  rejected   in_db  result
+employee                10        10         0      10  PASS
+customer               100       100         0     100  PASS
+account                150       150         0     150  PASS
+complaint              120       120         0     120  PASS
+service_request         60        60         0      60  PASS
+
+ORPHAN / CONSISTENCY CHECKS (expected 0 rows each)
+------------------------------------------------------------------------------
+account -> customer                                       0  PASS
+complaint -> customer                                     0  PASS
+complaint -> account (when present)                       0  PASS
+complaint account belongs to complaint customer           0  PASS
+complaint -> assigned employee (when present)             0  PASS
+service_request -> customer                               0  PASS
+service_request -> account (when present)                 0  PASS
+service_request account belongs to request customer       0  PASS
+
+OPTIONAL ACCOUNT LINKS (valid by design, not orphans)
+------------------------------------------------------------------------------
+complaints with no account_id (general / identity / fraud): 39
+service requests with no account_id:                        18
+
+REJECTED ROWS
+------------------------------------------------------------------------------
+none

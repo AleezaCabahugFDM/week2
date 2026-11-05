@@ -1,0 +1,151 @@
+account_id,customer_id,account_type,status,current_balance
+A00001,C0089,Savings,Active,27931.69
+A00002,C0059,Mortgage,Active,8149.49
+A00003,C0061,Mortgage,Active,10256.46
+A00004,C0061,Credit Card,Active,5824.41
+A00005,C0080,Chequing,Active,3970.90
+A00006,C0100,Chequing,Active,5903.79
+A00007,C0030,Chequing,Restricted,8594.02
+A00008,C0093,Credit Card,Active,18631.01
+A00009,C0014,Mortgage,Restricted,17508.88
+A00010,C0066,Credit Card,Restricted,6012.09
+A00011,C0068,Mortgage,Active,11334.51
+A00012,C0053,Savings,Restricted,6207.56
+A00013,C0081,Savings,Restricted,6563.52
+A00014,C0070,Savings,Active,27453.22
+A00015,C0081,Credit Card,Active,9544.63
+A00016,C0041,Savings,Active,23371.61
+A00017,C0025,Chequing,Active,26680.23
+A00018,C0017,Chequing,Active,11698.18
+A00019,C0056,Mortgage,Restricted,23719.08
+A00020,C0017,Savings,Active,18876.98
+A00021,C0003,Chequing,Active,17140.01
+A00022,C0046,Credit Card,Active,21170.88
+A00023,C0082,Credit Card,Restricted,29957.74
+A00024,C0025,Chequing,Active,3274.58
+A00025,C0005,Mortgage,Active,5768.18
+A00026,C0015,Savings,Active,25222.41
+A00027,C0037,Chequing,Restricted,1952.16
+A00028,C0088,Mortgage,Active,22965.14
+A00029,C0042,Mortgage,Active,12850.66
+A00030,C0046,Mortgage,Active,18067.80
+A00031,C0002,Chequing,Active,5519.95
+A00032,C0059,Credit Card,Restricted,11168.80
+A00033,C0025,Savings,Active,15425.57
+A00034,C0002,Credit Card,Active,24071.01
+A00035,C0091,Mortgage,Restricted,18028.19
+A00036,C0065,Credit Card,Active,8457.52
+A00037,C0015,Savings,Active,4083.13
+A00038,C0043,Credit Card,Active,22980.35
+A00039,C0052,Savings,Restricted,5626.04
+A00040,C0044,Credit Card,Active,3115.81
+A00041,C0046,Chequing,Active,8261.97
+A00042,C0086,Credit Card,Active,6559.83
+A00043,C0052,Savings,Restricted,2397.34
+A00044,C0066,Mortgage,Restricted,6475.24
+A00045,C0016,Mortgage,Restricted,782.33
+A00046,C0079,Chequing,Restricted,7187.23
+A00047,C0057,Mortgage,Restricted,1608.66
+A00048,C0026,Mortgage,Active,3043.63
+A00049,C0033,Credit Card,Active,16546.72
+A00050,C0066,Mortgage,Restricted,17082.56
+A00051,C0013,Mortgage,Restricted,2378.26
+A00052,C0077,Chequing,Active,27911.60
+A00053,C0021,Mortgage,Active,29105.09
+A00054,C0064,Chequing,Active,28363.67
+A00055,C0054,Credit Card,Restricted,12017.17
+A00056,C0040,Credit Card,Restricted,8643.94
+A00057,C0084,Credit Card,Restricted,27891.31
+A00058,C0085,Credit Card,Active,518.97
+A00059,C0032,Chequing,Restricted,4781.96
+A00060,C0097,Mortgage,Active,26936.51
+A00061,C0096,Mortgage,Active,17494.22
+A00062,C0093,Credit Card,Active,23947.99
+A00063,C0029,Mortgage,Restricted,14380.49
+A00064,C0097,Savings,Active,15748.45
+A00065,C0093,Mortgage,Active,29366.74
+A00066,C0032,Chequing,Active,18765.01
+A00067,C0059,Chequing,Active,25847.76
+A00068,C0046,Savings,Active,10962.73
+A00069,C0018,Mortgage,Active,18071.42
+A00070,C0082,Mortgage,Active,23361.21
+A00071,C0068,Savings,Active,22055.11
+A00072,C0031,Mortgage,Active,15138.16
+A00073,C0040,Credit Card,Active,8218.20
+A00074,C0088,Savings,Restricted,8431.36
+A00075,C0031,Savings,Active,15114.26
+A00076,C0084,Savings,Restricted,1281.29
+A00077,C0008,Chequing,Active,7859.61
+A00078,C0004,Chequing,Active,6754.58
+A00079,C0036,Chequing,Active,27395.30
+A00080,C0021,Savings,Restricted,29446.55
+A00081,C0062,Mortgage,Active,6397.92
+A00082,C0044,Mortgage,Restricted,4087.54
+A00083,C0010,Chequing,Active,24294.57
+A00084,C0080,Savings,Active,12788.37
+A00085,C0034,Mortgage,Active,11131.60
+A00086,C0084,Credit Card,Active,16503.54
+A00087,C0096,Savings,Active,19648.81
+A00088,C0075,Chequing,Active,26267.83
+A00089,C0011,Chequing,Active,16970.07
+A00090,C0063,Mortgage,Active,24722.54
+A00091,C0002,Chequing,Active,6476.48
+A00092,C0085,Chequing,Restricted,9183.78
+A00093,C0093,Credit Card,Active,26463.15
+A00094,C0029,Credit Card,Restricted,21806.67
+A00095,C0047,Chequing,Active,21307.32
+A00096,C0073,Credit Card,Active,15953.32
+A00097,C0040,Mortgage,Active,6714.28
+A00098,C0094,Savings,Active,10914.66
+A00099,C0047,Chequing,Active,20342.44
+A00100,C0075,Mortgage,Active,22191.09
+A00101,C0048,Mortgage,Restricted,4728.12
+A00102,C0076,Savings,Active,2783.22
+A00103,C0059,Credit Card,Active,6715.08
+A00104,C0008,Savings,Restricted,8946.79
+A00105,C0003,Mortgage,Active,17500.61
+A00106,C0040,Chequing,Active,2542.01
+A00107,C0095,Chequing,Active,2632.53
+A00108,C0082,Savings,Active,22399.17
+A00109,C0084,Mortgage,Active,21394.87
+A00110,C0063,Credit Card,Active,11892.04
+A00111,C0044,Credit Card,Restricted,4187.79
+A00112,C0063,Chequing,Restricted,18582.94
+A00113,C0006,Mortgage,Restricted,10540.04
+A00114,C0001,Mortgage,Active,26670.54
+A00115,C0070,Chequing,Restricted,10925.38
+A00116,C0002,Chequing,Active,27714.50
+A00117,C0019,Savings,Restricted,4951.37
+A00118,C0082,Mortgage,Restricted,5112.90
+A00119,C0027,Mortgage,Active,15919.23
+A00120,C0036,Chequing,Active,9322.49
+A00121,C0015,Credit Card,Restricted,4749.91
+A00122,C0023,Chequing,Active,613.38
+A00123,C0062,Chequing,Active,3349.41
+A00124,C0024,Credit Card,Active,17691.69
+A00125,C0077,Mortgage,Restricted,15307.44
+A00126,C0057,Savings,Active,12134.35
+A00127,C0097,Credit Card,Restricted,16492.21
+A00128,C0071,Mortgage,Active,14594.33
+A00129,C0052,Credit Card,Restricted,16465.75
+A00130,C0012,Mortgage,Active,12042.82
+A00131,C0028,Savings,Active,29283.26
+A00132,C0067,Credit Card,Active,19760.84
+A00133,C0031,Chequing,Active,27166.34
+A00134,C0058,Savings,Restricted,12701.01
+A00135,C0021,Mortgage,Active,23180.77
+A00136,C0019,Credit Card,Restricted,4020.38
+A00137,C0095,Credit Card,Restricted,16083.84
+A00138,C0020,Savings,Active,6208.64
+A00139,C0020,Savings,Active,10616.66
+A00140,C0079,Chequing,Active,20841.39
+A00141,C0011,Credit Card,Active,23700.72
+A00142,C0054,Savings,Restricted,2819.26
+A00143,C0057,Savings,Active,16346.80
+A00144,C0068,Mortgage,Active,28403.17
+A00145,C0040,Credit Card,Active,12223.30
+A00146,C0072,Credit Card,Active,20047.69
+A00147,C0009,Credit Card,Active,20644.12
+A00148,C0014,Mortgage,Restricted,13906.59
+A00149,C0016,Mortgage,Active,25924.00
+A00150,C0092,Mortgage,Active,8874.70

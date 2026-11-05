@@ -1,0 +1,46 @@
+INTEGRITY REPORT - Exercise 2.5.1 Database Seeder
+==============================================================================
+generated : 2026-11-04 14:59:58
+database  : postgres@localhost:5432/complaints_seed
+data dir  : test_data/invalid_rows
+mode      : reset=True strict=False
+result    : PASSED - committed (11 row(s) rejected, see below)
+
+ROW COUNTS (source vs inserted vs database)
+------------------------------------------------------------------------------
+table               source  inserted  rejected   in_db  result
+employee                10        10         0      10  PASS
+customer               102       100         2     100  PASS
+account                152       150         2     150  PASS
+complaint              125       120         5     120  PASS
+service_request         62        60         2      60  PASS
+
+ORPHAN / CONSISTENCY CHECKS (expected 0 rows each)
+------------------------------------------------------------------------------
+account -> customer                                       0  PASS
+complaint -> customer                                     0  PASS
+complaint -> account (when present)                       0  PASS
+complaint account belongs to complaint customer           0  PASS
+complaint -> assigned employee (when present)             0  PASS
+service_request -> customer                               0  PASS
+service_request -> account (when present)                 0  PASS
+service_request account belongs to request customer       0  PASS
+
+OPTIONAL ACCOUNT LINKS (valid by design, not orphans)
+------------------------------------------------------------------------------
+complaints with no account_id (general / identity / fraud): 39
+service requests with no account_id:                        18
+
+REJECTED ROWS
+------------------------------------------------------------------------------
+customer: line 102 (C0101) - database rejected row: new row for relation "customer" violates check constraint "chk_customer_segment"
+customer: line 103 (C0001) - duplicate customer_id 'C0001' in source file
+account: line 152 (A00151) - customer_id 'C9999' does not exist in customer
+account: line 153 (A00152) - customer_id 'C0101' does not exist in customer
+complaint: line 122 (CP00121) - account_id 'A00002' belongs to customer 'C0059', not to customer 'C0001'
+complaint: line 123 (CP00122) - customer_id 'C9999' does not exist in customer
+complaint: line 124 (CP00123) - customer_id 'C0101' does not exist in customer
+complaint: line 125 (CP00124) - required value 'customer_narrative' is empty
+complaint: line 126 (CP00125) - assigned_employee_id 'EMP999' does not exist in employee
+service_request: line 62 (SR00061) - account_id 'A00002' belongs to customer 'C0059', not to customer 'C0001'
+service_request: line 63 (SR00062) - database rejected row: new row for relation "service_request" violates check constraint "chk_service_request_dates"
