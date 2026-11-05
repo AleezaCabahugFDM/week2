@@ -1,31 +1,25 @@
 # Complaint Analysis Summary
 
-Week 2 | Exercise 2.4.1 · made by `complaint_analysis.py`, do not edit by hand.
-
-**Input:** `complaints.csv` · **Rows read:** 120 · **Rows analysed:** 120 · **Rows skipped:** 0
-**Complaints opened between:** 2026-01-02 and 2026-08-29
+Week 2 | Exercise 2.4.1 · made by `complaint_analysis.py` from `complaints.csv`, do not edit by hand.
 
 ## Headlines
 
 - **120 complaints** from **69 customers**. **86 (71.7%) are still open** and 34 (28.3%) are closed.
-- **Highest-volume category: Mortgage Servicing** with 31 complaints (25.8% of all complaints).
-- **Closed cases took 10.1 days on average**, based on 34 closed complaints.
+- **Highest-volume category: Mortgage Servicing** with 31 complaints (25.8%).
+- **Closed cases took 10.1 days on average.**
 
 ## Definitions
 
-Same rules as the SQL metrics in Exercise 2.2.2.
+Same rules as the SQL metrics in 2.2.2.
 
-| Term | Meaning |
-|---|---|
-| Open | Status is not `Closed` or `Resolved` (Open, In Review and Escalated are all open). |
-| Closed | Status is `Closed` or `Resolved`. |
-| Percentage | Count ÷ complaints analysed × 100, to 1 decimal place. |
-| Resolution days | `resolved_date` − `created_date` in days, for **closed complaints only**. |
-| Unknown | There is no closed complaint to measure. Shown as 'unknown', **never as 0**. |
+- **Open:** status is not `Closed` or `Resolved` (so Open, In Review and Escalated are open).
+- **Closed:** status is `Closed` or `Resolved`.
+- **Resolution days:** `resolved_date` − `created_date`, for closed complaints only.
+- **Unknown:** no closed complaint to measure. Shown as 'unknown', never as 0.
 
 ## Load evidence
 
-Columns found: `complaint_id, customer_id, account_id, category, status, created_date, resolved_date, channel, priority` (`date_opened` and `date_closed` are read as `created_date` and `resolved_date`).
+Rows read: 120 · valid: 120 · skipped: 0
 
 | Column | Missing values |
 |---|---:|
@@ -79,12 +73,11 @@ No rows were skipped and there were no warnings.
 
 1. Mortgage Servicing is the largest category at 25.8% of complaints.
 2. Most complaints are still open (86 of 120).
-3. Among closed cases, Account Access took longest on average (16.2 days) and Service Quality was quickest (6.2 days).
 
 ## What this analysis does not show
 
-- **No trends.** This is one snapshot, so it says nothing about whether things are getting better or worse.
-- **No causes.** The counts do not explain *why* customers complained.
+- **No trends.** This is one snapshot, so it can't say if things are getting better or worse.
+- **No causes.** The counts don't explain *why* customers complained.
 - **Resolution time only covers closed cases.** The 86 open complaints are not included.
 - Some categories have only a few closed cases, so their averages are not reliable.
 - The data is synthetic training data.

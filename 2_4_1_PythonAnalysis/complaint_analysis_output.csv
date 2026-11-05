@@ -1,38 +1,32 @@
-metric,dimension,dimension_value,value,unit
-rows_read,load,all,120,rows
-rows_skipped,load,all,0,rows
-complaint_count,overall,all,120,complaints
-distinct_customers,overall,all,69,customers
-open_count,overall,all,86,complaints
-closed_count,overall,all,34,complaints
-highest_volume_category_count,category,Mortgage Servicing,31,complaints
-highest_volume_category_pct,category,Mortgage Servicing,25.8,percent
-avg_resolution_days,overall,all,10.1,days
-complaint_count,status,Closed,34,complaints
-complaint_count,status,In Review,32,complaints
-complaint_count,status,Escalated,30,complaints
-complaint_count,status,Open,24,complaints
-complaint_count,category,Mortgage Servicing,31,complaints
-complaint_pct,category,Mortgage Servicing,25.8,percent
-complaint_count,category,Card or Transaction Dispute,25,complaints
-complaint_pct,category,Card or Transaction Dispute,20.8,percent
-complaint_count,category,Service Quality,21,complaints
-complaint_pct,category,Service Quality,17.5,percent
-complaint_count,category,Digital Banking,19,complaints
-complaint_pct,category,Digital Banking,15.8,percent
-complaint_count,category,Fees,15,complaints
-complaint_pct,category,Fees,12.5,percent
-complaint_count,category,Account Access,9,complaints
-complaint_pct,category,Account Access,7.5,percent
-closed_count,category,Account Access,5,complaints
-avg_resolution_days,category,Account Access,16.2,days
-closed_count,category,Card or Transaction Dispute,4,complaints
-avg_resolution_days,category,Card or Transaction Dispute,11.2,days
-closed_count,category,Digital Banking,4,complaints
-avg_resolution_days,category,Digital Banking,8.2,days
-closed_count,category,Fees,6,complaints
-avg_resolution_days,category,Fees,10.3,days
-closed_count,category,Mortgage Servicing,9,complaints
-avg_resolution_days,category,Mortgage Servicing,9.4,days
-closed_count,category,Service Quality,6,complaints
-avg_resolution_days,category,Service Quality,6.2,days
+metric,group,value
+rows_read,all,120
+rows_skipped,all,0
+complaint_count,all,120
+distinct_customers,all,69
+open_count,all,86
+closed_count,all,34
+highest_volume_category,Mortgage Servicing,31
+highest_volume_category_pct,Mortgage Servicing,25.8
+avg_resolution_days,all,10.1
+complaint_count_by_status,Closed,34
+complaint_count_by_status,In Review,32
+complaint_count_by_status,Escalated,30
+complaint_count_by_status,Open,24
+complaint_count_by_category,Mortgage Servicing,31
+complaint_count_by_category,Card or Transaction Dispute,25
+complaint_count_by_category,Service Quality,21
+complaint_count_by_category,Digital Banking,19
+complaint_count_by_category,Fees,15
+complaint_count_by_category,Account Access,9
+closed_count_by_category,Account Access,5
+avg_resolution_days_by_category,Account Access,16.2
+closed_count_by_category,Card or Transaction Dispute,4
+avg_resolution_days_by_category,Card or Transaction Dispute,11.2
+closed_count_by_category,Digital Banking,4
+avg_resolution_days_by_category,Digital Banking,8.2
+closed_count_by_category,Fees,6
+avg_resolution_days_by_category,Fees,10.3
+closed_count_by_category,Mortgage Servicing,9
+avg_resolution_days_by_category,Mortgage Servicing,9.4
+closed_count_by_category,Service Quality,6
+avg_resolution_days_by_category,Service Quality,6.2
