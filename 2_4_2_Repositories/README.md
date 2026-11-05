@@ -1,9 +1,11 @@
 # 2.4.2 Database Access Components
 
-Repositories for customer, account and complaint data on the 2.1.1 PostgreSQL schema.
+Week 2 | Exercise 2.4.2
+
+Python code that gets customer, account and complaint data from the 2.1.1 PostgreSQL database in one safe, reusable way.
 
 ```
-src/data/database_manager.py      connection + transaction lifecycle
+src/data/database_manager.py      opens/closes the connection, commits or rolls back each query
 src/data/customer_repository.py   CustomerRepository.get_by_id
 src/data/account_repository.py    AccountRepository.get_for_customer
 src/data/complaint_repository.py  ComplaintRepository.get_by_id / get_for_customer / create
@@ -12,25 +14,35 @@ tests/test_repositories.py        valid, missing and failure tests
 
 ## Setup
 
-Requires Python 3.9+.
+1. Python 3.9 or newer, plus the PostgreSQL library:
 
-```bash
-python3 -m pip install --user psycopg2-binary
-```
+   ```bash
+   python3 -m pip install psycopg2-binary
+   ```
 
-Set these environment variables:
+2. A PostgreSQL database with the 2.1.1 schema and seed data (`2_1_1_schema/database_schema.sql`).
 
-| Variable | Example |
-|---|---|
-| `DB_HOST` | `localhost` |
-| `DB_PORT` | `5432` |
-| `DB_NAME` | `complaints_training` |
-| `DB_USER` | `training_user` |
-| `DB_PASSWORD` | your password |
+3. These settings, with the names from `environment_example.txt`:
 
-`MODEL_API_KEY` is not used here. Never commit real values: keep them in your shell or an untracked `.env` file.
+   | Setting | Example |
+   |---|---|
+   | `DB_HOST` | `localhost` |
+   | `DB_PORT` | `5432` |
+   | `DB_NAME` | `complaints_training` |
+   | `DB_USER` | `training_user` |
+   | `DB_PASSWORD` | your password |
 
-## Usage
+   Put the real values in a `.env` file in the repo folder. `.gitignore` keeps `.env` off GitHub, so the password is never committed. Load it into your terminal before running anything:
+
+   ```bash
+   set -a; source ../.env; set +a
+   ```
+
+   `MODEL_API_KEY` is not used in this exercise.
+
+## How to use it
+
+Run from the `2_4_2_Repositories` folder with `PYTHONPATH=src`, for example `PYTHONPATH=src python3 my_script.py`.
 
 ```python
 from data.database_manager import DatabaseManager
@@ -38,57 +50,66 @@ from data.customer_repository import CustomerRepository
 from data.account_repository import AccountRepository
 from data.complaint_repository import ComplaintRepository
 
-with DatabaseManager.from_env() as db:
-    customer = CustomerRepository(db).get_by_id("CUS001")             # Customer, or None
-    accounts = AccountRepository(db).get_for_customer("CUS001")       # [Account], or []
-    complaints = ComplaintRepository(db).get_for_customer("CUS001")   # [Complaint], or []
+db = DatabaseManager()          # reads the DB_* settings
+try:
+    customer = CustomerRepository(db).get_by_id("CUS001")             # a Customer, or None
+    accounts = AccountRepository(db).get_for_customer("CUS001")       # a list of Accounts, or []
+    complaints = ComplaintRepository(db).get_for_customer("CUS001")   # a list of Complaints, or []
     new = ComplaintRepository(db).create(
-        complaint_id="CMP031", customer_id="CUS001", account_id="ACC001",
-        channel="Web", category="Fee Dispute",
-        customer_narrative="Charged twice", priority="Medium",
-    )                                                                 # status OPEN, created_at now
+        "CMP031", "CUS001", "Web", "Fee Dispute", "Charged twice", "Medium",
+        account_id="ACC001",
+    )                                                                 # saved as OPEN, created_at = now
+    print(customer.first_name, len(accounts), len(complaints), new.status)
+finally:
+    db.close()                  # always close, even if something failed
 ```
 
-Run from a folder where `src` is on the path, for example `PYTHONPATH=src python3 your_script.py`.
+On the seed data, `CUS001` has account `ACC001` and complaints `CMP001`, `CMP011`, `CMP012` and `CMP013`.
 
-## Responsibilities
+## Who does what
 
-| Component | Does | Does not |
+| Part | Does | Does not |
 |---|---|---|
-| `DatabaseManager` | Reads settings, opens and closes the connection, commits on success, rolls back on error, always closes the cursor | Run queries for callers, print or log the password |
-| Repositories | Run parameterised SQL and return dataclass records (`None` or `[]` when nothing is found) | Make business decisions (priority, routing, approval, eligibility) |
-| Database | Enforces data rules (allowed priorities and statuses, keys, account belongs to customer) | — |
-| Callers (services, agents) | Business logic, then call the repositories | Write SQL |
+| `DatabaseManager` | Reads the settings, opens and closes the connection. `run()` commits if a query worked, rolls back if it failed, and always closes the cursor. | Print or log the password |
+| Repositories | Run SQL with `%s` placeholders and give back `Customer`, `Account` or `Complaint` objects (`None` or `[]` when nothing is found) | Make business decisions (priority, routing, approval) |
+| Database | Enforces the rules: allowed priorities and statuses, unique IDs, an account must belong to the customer | |
+| Later code (Week 3 services, agents) | Business logic, then calls a repository | Write SQL |
 
-Database errors are not hidden. For example, `CheckViolation` for priority `Urgent`, `UniqueViolation` for a duplicate ID, or `ForeignKeyViolation` for another customer's account. The transaction is rolled back first, so nothing partial is saved and the connection stays usable.
+**When something goes wrong:**
+
+- **Missing setting:** a `ConfigError` names the missing setting, but never shows any values.
+- **Database not reachable:** a `psycopg2.OperationalError`, without the password in the message.
+- **Bad data:** the database error is passed on, not hidden. Examples are `CheckViolation` for priority `Urgent`, `UniqueViolation` for a duplicate ID, and `ForeignKeyViolation` for another customer's account. The change is rolled back first, so nothing half-done is saved and the connection keeps working.
 
 ## Where SQL is allowed
 
-- **Allowed:** only inside `src/data/*_repository.py`, and only with `%s` placeholders and a values tuple.
-- **Prohibited:** SQL in services, agent tools or notebooks. Building SQL from user input with f-strings, `+` or `.format()`. The repositories write every query out in full, with no f-strings.
-- Tests may write SQL to set up and remove their own test data.
+- **Allowed:** only in `src/data/*_repository.py`, written out in full, with `%s` placeholders and the values passed separately.
+- **Not allowed:** SQL anywhere else (services, agent tools, notebooks), or SQL built by pasting values into the text with f-strings, `+` or `.format()`. Text like `x' OR '1'='1` is then treated as a plain value, never as SQL.
+- **Exception:** the tests may write SQL to add and remove their own test rows.
 
 ## Tests
 
 ```bash
+set -a; source ../.env; set +a
 python3 -m unittest discover -s tests -v
 ```
 
-- **Without database variables:** the 4 config and connection tests run, and the 16 database tests are skipped.
-- **With database variables:** all 20 tests run against the 2.1.1 schema. They insert their own `TST_` rows and delete them afterwards, so real data is not changed.
+- **Without the DB settings:** the 4 settings tests run and the 16 database tests are skipped.
+- **With the DB settings:** all 20 tests run. They add their own `TST_` rows and delete them at the end, so the real data is not changed.
 
-Last run: 20/20 passed on a local PostgreSQL 18 copy of the 2.1.1 schema and seed data, and no `TST_` rows were left behind.
+**Last run (2026-11-05):** 20 of 20 passed on a local PostgreSQL 18 copy of the 2.1.1 schema and seed data. Afterwards the database still had 10 customers, 10 accounts and 30 complaints, with no `TST_` rows left.
 
-| Group | Tests |
+| Group | What is tested |
 |---|---|
-| Valid | Get customer, get accounts, get complaint, list complaints, create and read back, create without an account |
-| Missing | Unknown customer or complaint returns `None`. A customer with no accounts or complaints returns `[]`. Injection text such as `x' OR '1'='1` is treated as a plain value. |
-| Failure | Invalid priority, duplicate ID, and another customer's account are all rejected and rolled back. The cursor closes after an error and the connection recovers. The connection closes when a `with` block fails. An unreachable database raises an error without exposing the password. Missing settings are named without showing their values. |
+| Valid | Get a customer, get accounts, get a complaint, list complaints, create a complaint and read it back, create a complaint without an account |
+| Missing | An unknown customer or complaint gives `None`. A customer with no accounts or complaints gives `[]`. Injection text is treated as a plain value. |
+| Failure | Invalid priority, duplicate ID and another customer's account are rejected and not saved. The connection still works after an error. The connection is closed after an error. An unreachable database gives an error without the password. A missing setting is named without showing values. |
 
-## Limitations
+## Known limitations
 
-- One connection per `DatabaseManager`, with no pooling and not thread-safe.
-- Every repository call is its own transaction. Several calls cannot yet be grouped into one transaction.
-- The tests need a real PostgreSQL database with the 2.1.1 schema.
+- One connection per `DatabaseManager`. No pooling, and not safe to share between threads.
+- Each repository call is its own transaction, so several calls can't yet be saved or undone together.
+- `create` always starts a complaint as `OPEN` with nobody assigned. Changing the status is for a later exercise.
+- The database tests need a real PostgreSQL database with the 2.1.1 schema.
 
-**Handover:** 2.5.1 reuses the connection and validation pattern. Week 3 services call these repositories instead of writing SQL.
+**Handover:** 2.5.1 reuses the connection and error-handling pattern. Week 3 services call these repositories instead of writing their own SQL.

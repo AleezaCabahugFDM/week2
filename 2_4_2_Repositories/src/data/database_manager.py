@@ -1,75 +1,81 @@
-"""Opens and closes the database connection, and commits or rolls back each transaction."""
+# database_manager.py
+# Week 2 | Exercise 2.4.2 - Opens and closes the database connection.
+#
+# Every query goes through run(). It commits if the query worked,
+# rolls back if it failed, and always closes the cursor.
 
 import os
-from contextlib import contextmanager
 
 import psycopg2
 
-REQUIRED_SETTINGS = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+SETTING_NAMES = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
 
 
 class ConfigError(Exception):
     """A database setting is missing."""
 
 
+def load_settings(source=os.environ):
+    """Read the DB_* settings. Stops with a ConfigError if any are missing."""
+    missing = []
+    for name in SETTING_NAMES:
+        if not source.get(name):
+            missing.append(name)
+    if len(missing) > 0:
+        # Name the missing settings, but never show any values.
+        raise ConfigError("Missing environment variable(s): " + ", ".join(missing))
+
+    settings = {}
+    for name in SETTING_NAMES:
+        settings[name] = source[name]
+    return settings
+
+
 class DatabaseManager:
-    def __init__(self, host, port, dbname, user, password):
-        self.host = host
-        self.port = int(port)
-        self.dbname = dbname
-        self.user = user
-        self._password = password      # never printed or logged
-        self._connection = None
+    def __init__(self, settings=None):
+        if settings is None:
+            settings = load_settings()
+        self.settings = settings        # holds the password, so never print this
+        self.connection = None
 
-    @classmethod
-    def from_env(cls):
-        """Read the DB_* settings from environment variables."""
-        missing = [name for name in REQUIRED_SETTINGS if not os.environ.get(name)]
-        if missing:
-            # Name the missing variables, but never show any values.
-            raise ConfigError(f"Missing environment variable(s): {', '.join(missing)}")
-        return cls(os.environ["DB_HOST"], os.environ["DB_PORT"], os.environ["DB_NAME"],
-                   os.environ["DB_USER"], os.environ["DB_PASSWORD"])
-
-    def __repr__(self):
-        return f"DatabaseManager({self.user}@{self.host}:{self.port}/{self.dbname}, password=***)"
-
-    @property
     def is_open(self):
-        return self._connection is not None and not self._connection.closed
+        return self.connection is not None and self.connection.closed == 0
 
     def connect(self):
-        if not self.is_open:
-            self._connection = psycopg2.connect(host=self.host, port=self.port, dbname=self.dbname,
-                                                user=self.user, password=self._password, connect_timeout=5)
-        return self._connection
+        if not self.is_open():
+            self.connection = psycopg2.connect(
+                host=self.settings["DB_HOST"],
+                port=int(self.settings["DB_PORT"]),
+                dbname=self.settings["DB_NAME"],
+                user=self.settings["DB_USER"],
+                password=self.settings["DB_PASSWORD"],
+                connect_timeout=5,
+            )
 
     def close(self):
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
 
-    @contextmanager
-    def transaction(self):
-        """Use with 'with'. Commits if everything worked, rolls back if there was an error.
+    def run(self, sql, values, fetch=None):
+        """Run one SQL statement with %s placeholders.
 
-            with db.transaction() as cur:
-                cur.execute("SELECT ...", (value,))
+        fetch="one" gives back one row (or None), fetch="all" gives back a list of rows,
+        and no fetch gives back nothing (for INSERT or DELETE).
         """
-        connection = self.connect()
-        cursor = connection.cursor()
+        self.connect()
+        cursor = self.connection.cursor()
         try:
-            yield cursor
-            connection.commit()
+            cursor.execute(sql, values)
+            result = None
+            if fetch == "one":
+                result = cursor.fetchone()
+            if fetch == "all":
+                result = cursor.fetchall()
+            self.connection.commit()        # it worked, so save it
+            return result
         except Exception:
-            connection.rollback()
-            raise
+            self.connection.rollback()      # it failed, so undo everything from this statement
+            raise                           # and still tell the caller about the error
         finally:
-            cursor.close()
-
-    # Lets you write: with DatabaseManager.from_env() as db: ...  (closes the connection at the end)
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *error):
-        self.close()
+            cursor.close()                  # runs whether it worked or not

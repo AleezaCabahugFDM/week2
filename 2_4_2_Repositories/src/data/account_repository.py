@@ -1,19 +1,17 @@
-"""Account data access. All SQL uses %s placeholders, never values pasted into the text."""
-
-from dataclasses import dataclass
-from datetime import date
-from decimal import Decimal
+# account_repository.py
+# Gets accounts from the database. All SQL uses %s placeholders,
+# so a value is never pasted into the SQL text.
 
 
-@dataclass
 class Account:
-    account_id: str
-    customer_id: str
-    account_number: str
-    account_type: str
-    status: str
-    balance: Decimal
-    open_date: date
+    def __init__(self, row):
+        self.account_id = row[0]
+        self.customer_id = row[1]
+        self.account_number = row[2]
+        self.account_type = row[3]
+        self.status = row[4]
+        self.balance = row[5]           # a Decimal, so money is exact
+        self.open_date = row[6]
 
 
 class AccountRepository:
@@ -21,12 +19,14 @@ class AccountRepository:
         self.db = db
 
     def get_for_customer(self, customer_id):
-        """Returns a list of Accounts (empty if the customer has none)."""
-        with self.db.transaction() as cur:
-            cur.execute(
-                "SELECT account_id, customer_id, account_number, account_type, status, balance, open_date "
-                "FROM account WHERE customer_id = %s ORDER BY account_id",
-                (customer_id,),
-            )
-            rows = cur.fetchall()
-        return [Account(*row) for row in rows]
+        """Gives back a list of Accounts. The list is empty if the customer has none."""
+        rows = self.db.run(
+            "SELECT account_id, customer_id, account_number, account_type, status, balance, open_date "
+            "FROM account WHERE customer_id = %s ORDER BY account_id",
+            (customer_id,),
+            fetch="all",
+        )
+        accounts = []
+        for row in rows:
+            accounts.append(Account(row))
+        return accounts
